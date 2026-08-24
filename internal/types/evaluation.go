@@ -43,9 +43,11 @@ type EvaluationTask struct {
 	TenantID  uint64 `json:"tenant_id"`  // Tenant/Organization ID
 	DatasetID string `json:"dataset_id"` // Dataset ID for evaluation
 
-	StartTime time.Time        `json:"start_time"`        // Task start time
-	Status    EvaluationStatue `json:"status"`            // Current task status
-	ErrMsg    string           `json:"err_msg,omitempty"` // Error message if failed
+	StartTime  time.Time        `json:"start_time"`         // Task start time
+	EndTime    *time.Time       `json:"end_time,omitempty"` // Task completion time
+	DurationMS int64            `json:"duration_ms"`        // End-to-end task latency in milliseconds
+	Status     EvaluationStatue `json:"status"`             // Current task status
+	ErrMsg     string           `json:"err_msg,omitempty"`  // Error message if failed
 
 	Total    int `json:"total,omitempty"`    // Total items to evaluate
 	Finished int `json:"finished,omitempty"` // Completed items count
