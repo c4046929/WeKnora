@@ -102,6 +102,20 @@ func (e *evaluationStorage) register(ctx context.Context, detail *types.Evaluati
 }
 
 func (e *evaluationStorage) get(ctx context.Context, taskID string) (*types.EvaluationDetail, error) {
+	detail, err := e.getStoredDetail(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	calls, usage, err := e.getModelCalls(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	detail.ModelCalls = calls
+	detail.Usage = usage
+	return detail, nil
+}
+
+func (e *evaluationStorage) getStoredDetail(ctx context.Context, taskID string) (*types.EvaluationDetail, error) {
 	var record evaluationRecord
 	if err := e.db.WithContext(ctx).Where("id = ?", taskID).First(&record).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -120,7 +134,7 @@ func (e *evaluationStorage) update(
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	detail, err := e.get(ctx, taskID)
+	detail, err := e.getStoredDetail(ctx, taskID)
 	if err != nil {
 		return err
 	}
@@ -382,6 +396,10 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	go func() {
 		// Create new context with logger for background task
 		newCtx := logger.CloneContext(ctx)
+		newCtx = types.WithLLMCallObserver(newCtx, &evaluationCallObserver{
+			ctx: context.WithoutCancel(newCtx), storage: e.evaluationStorage,
+			taskID: taskID, tenantID: tenantID,
+		})
 		logger.Infof(newCtx, "Background evaluation started for task ID: %s", taskID)
 
 		// Update task status to running

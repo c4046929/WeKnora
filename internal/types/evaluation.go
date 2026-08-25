@@ -55,9 +55,43 @@ type EvaluationTask struct {
 
 // EvaluationDetail contains detailed evaluation information
 type EvaluationDetail struct {
-	Task   *EvaluationTask `json:"task"`             // Evaluation task info
-	Params *ChatManage     `json:"params"`           // Evaluation parameters
-	Metric *MetricResult   `json:"metric,omitempty"` // Evaluation metrics
+	Task       *EvaluationTask       `json:"task"`                  // Evaluation task info
+	Params     *ChatManage           `json:"params"`                // Evaluation parameters
+	Metric     *MetricResult         `json:"metric,omitempty"`      // Evaluation metrics
+	Usage      *EvaluationUsage      `json:"usage,omitempty"`       // Aggregated model usage
+	ModelCalls []EvaluationModelCall `json:"model_calls,omitempty"` // Structured model calls
+}
+
+// EvaluationUsage aggregates model-call telemetry for one evaluation run.
+type EvaluationUsage struct {
+	CallCount             int     `json:"call_count"`
+	SuccessfulCalls       int     `json:"successful_calls"`
+	FailedCalls           int     `json:"failed_calls"`
+	PromptTokens          int     `json:"prompt_tokens"`
+	CompletionTokens      int     `json:"completion_tokens"`
+	TotalTokens           int     `json:"total_tokens"`
+	CacheReadTokens       int     `json:"cache_read_tokens"`
+	CacheWriteTokens      int     `json:"cache_write_tokens"`
+	CacheMissTokens       int     `json:"cache_miss_tokens"`
+	CacheReportedCalls    int     `json:"cache_reported_calls"`
+	CacheHitCalls         int     `json:"cache_hit_calls"`
+	CacheHitRate          float64 `json:"cache_hit_rate"`
+	ModelDurationMS       int64   `json:"model_duration_ms"`
+	AverageModelLatencyMS float64 `json:"average_model_latency_ms"`
+}
+
+// EvaluationModelCall describes one model call without storing prompt content.
+type EvaluationModelCall struct {
+	ID                      string     `json:"id"`
+	ModelID                 string     `json:"model_id"`
+	ModelName               string     `json:"model_name"`
+	Purpose                 string     `json:"purpose,omitempty"`
+	PromptPrefixFingerprint string     `json:"prompt_prefix_fingerprint,omitempty"`
+	Usage                   TokenUsage `json:"usage"`
+	DurationMS              int64      `json:"duration_ms"`
+	Success                 bool       `json:"success"`
+	Error                   string     `json:"error,omitempty"`
+	CreatedAt               time.Time  `json:"created_at"`
 }
 
 // String returns JSON representation of EvaluationTask
