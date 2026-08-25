@@ -104,6 +104,11 @@ func NewEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.Oll
 	if langfuse.GetManager().Enabled() {
 		e = &langfuseEmbedder{inner: e}
 	}
+	// Outermost: reuse vectors after all provider, concurrency, debug, and
+	// tracing decorators have been assembled. A cache hit therefore avoids the
+	// complete remote-call path, while misses retain the existing observability
+	// and concurrency behaviour.
+	e = wrapEmbeddingCache(e, config)
 	return e, nil
 }
 

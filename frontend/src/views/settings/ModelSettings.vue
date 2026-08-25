@@ -277,6 +277,9 @@ function convertToLegacyFormat(model: ModelConfig) {
     outputPricePerMillion: Number(model.parameters.extra_config?.output_price_per_million || 0),
     cacheReadPricePerMillion: Number(model.parameters.extra_config?.cache_read_price_per_million || 0),
     cacheWritePricePerMillion: Number(model.parameters.extra_config?.cache_write_price_per_million || 0),
+    embeddingCacheEnabled: model.parameters.extra_config?.embedding_cache_enabled !== 'false',
+    embeddingCacheTTLSeconds: Number(model.parameters.extra_config?.embedding_cache_ttl_seconds || 86400),
+    embeddingCacheMaxEntries: Number(model.parameters.extra_config?.embedding_cache_max_entries || 10000),
     _modelType: backendTypeToModelType[model.type] || 'chat' as ModelType,
     // Preserve the credential metadata map so the editor dialog can render
     // the "Configured" state without an extra round-trip.
@@ -519,6 +522,11 @@ const handleModelSave = async (modelData: any) => {
       extraConfig.output_price_per_million = String(Math.max(0, Number(modelData.outputPricePerMillion) || 0))
       extraConfig.cache_read_price_per_million = String(Math.max(0, Number(modelData.cacheReadPricePerMillion) || 0))
       extraConfig.cache_write_price_per_million = String(Math.max(0, Number(modelData.cacheWritePricePerMillion) || 0))
+    }
+    if (saveType === 'embedding') {
+      extraConfig.embedding_cache_enabled = String(modelData.embeddingCacheEnabled !== false)
+      extraConfig.embedding_cache_ttl_seconds = String(Math.max(1, Number(modelData.embeddingCacheTTLSeconds) || 86400))
+      extraConfig.embedding_cache_max_entries = String(Math.max(1, Number(modelData.embeddingCacheMaxEntries) || 10000))
     }
     const extraConfigFields = Object.keys(extraConfig).length > 0
       ? { extra_config: extraConfig }
