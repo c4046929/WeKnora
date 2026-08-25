@@ -44,7 +44,14 @@ func TestObservableChatRecordsUsageAndMetadata(t *testing.T) {
 		CacheReadTokens: 30, CacheReported: true, CacheStatus: types.PromptCacheStatusHit,
 	}}}
 
-	wrapped, err := wrapChatObservability(inner, nil)
+	wrapped, err := wrapChatObservability(inner, map[string]string{
+		"pricing_enabled":               "true",
+		"pricing_currency":              "usd",
+		"input_price_per_million":       "2",
+		"output_price_per_million":      "10",
+		"cache_read_price_per_million":  "1",
+		"cache_write_price_per_million": "3",
+	}, nil)
 	require.NoError(t, err)
 	response, err := wrapped.Chat(ctx, nil, nil)
 	require.NoError(t, err)
@@ -56,6 +63,9 @@ func TestObservableChatRecordsUsageAndMetadata(t *testing.T) {
 	require.Equal(t, "knowledge_qa", observation.Purpose)
 	require.Equal(t, "prefix-hash", observation.PromptPrefixFingerprint)
 	require.Equal(t, 100, observation.Usage.TotalTokens)
+	require.True(t, observation.Pricing.Enabled)
+	require.Equal(t, "USD", observation.Pricing.Currency)
+	require.InDelta(t, 0.00033, observation.EstimatedCost, 0.0000001)
 	require.True(t, observation.Success)
 	require.GreaterOrEqual(t, observation.DurationMS, int64(0))
 }
@@ -65,7 +75,7 @@ func TestObservableChatRecordsFailures(t *testing.T) {
 	ctx := types.WithLLMCallObserver(context.Background(), observer)
 	inner := &observabilityFakeChat{err: errors.New("provider unavailable")}
 
-	wrapped, err := wrapChatObservability(inner, nil)
+	wrapped, err := wrapChatObservability(inner, nil, nil)
 	require.NoError(t, err)
 	_, err = wrapped.Chat(ctx, nil, nil)
 	require.EqualError(t, err, "provider unavailable")

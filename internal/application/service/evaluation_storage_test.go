@@ -95,6 +95,11 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 			CachedTokens: 40, CacheReadTokens: 40, CacheMissTokens: 60,
 			CacheReported: true, CacheStatus: types.PromptCacheStatusHit,
 		},
+		Pricing: types.LLMTokenPricing{
+			Enabled: true, Currency: "USD", InputPerMillion: 2,
+			OutputPerMillion: 10, CacheReadPerMillion: 1,
+		},
+		EstimatedCost: 0.0012,
 	}))
 	require.NoError(t, storage.recordModelCall(ctx, detail.Task.ID, detail.Task.TenantID, types.LLMCallObservation{
 		ModelID: "model-1", ModelName: "test-model", Purpose: "knowledge_qa",
@@ -118,4 +123,10 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 	require.EqualValues(t, 400, loaded.Usage.ModelDurationMS)
 	require.Equal(t, 200.0, loaded.Usage.AverageModelLatencyMS)
 	require.InDelta(t, float64(40)/150, loaded.Usage.CacheHitRate, 0.0001)
+	require.Equal(t, 1, loaded.Usage.PricedCalls)
+	require.Equal(t, 1, loaded.Usage.UnpricedCalls)
+	require.InDelta(t, 0.0012, loaded.Usage.CostByCurrency["USD"], 0.0000001)
+	require.True(t, loaded.ModelCalls[0].Pricing.Enabled)
+	require.Equal(t, "USD", loaded.ModelCalls[0].Pricing.Currency)
+	require.InDelta(t, 0.0012, loaded.ModelCalls[0].EstimatedCost, 0.0000001)
 }

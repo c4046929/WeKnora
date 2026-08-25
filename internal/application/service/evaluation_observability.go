@@ -10,26 +10,33 @@ import (
 )
 
 type evaluationModelCallRecord struct {
-	ID                      string `gorm:"primaryKey;size:36"`
-	TaskID                  string `gorm:"size:255;not null;index"`
-	TenantID                uint64 `gorm:"not null;index"`
-	ModelID                 string `gorm:"size:255"`
-	ModelName               string `gorm:"size:255;not null"`
-	Purpose                 string `gorm:"size:100"`
-	PromptPrefixFingerprint string `gorm:"size:128"`
-	PromptTokens            int
-	CompletionTokens        int
-	TotalTokens             int
-	CachedTokens            int
-	CacheReadTokens         int
-	CacheWriteTokens        int
-	CacheMissTokens         int
-	CacheReported           bool
-	CacheStatus             types.PromptCacheStatus `gorm:"size:32"`
-	DurationMS              int64
-	Success                 bool   `gorm:"not null"`
-	ErrMsg                  string `gorm:"type:text"`
-	CreatedAt               time.Time
+	ID                        string `gorm:"primaryKey;size:36"`
+	TaskID                    string `gorm:"size:255;not null;index"`
+	TenantID                  uint64 `gorm:"not null;index"`
+	ModelID                   string `gorm:"size:255"`
+	ModelName                 string `gorm:"size:255;not null"`
+	Purpose                   string `gorm:"size:100"`
+	PromptPrefixFingerprint   string `gorm:"size:128"`
+	PromptTokens              int
+	CompletionTokens          int
+	TotalTokens               int
+	CachedTokens              int
+	CacheReadTokens           int
+	CacheWriteTokens          int
+	CacheMissTokens           int
+	CacheReported             bool
+	CacheStatus               types.PromptCacheStatus `gorm:"size:32"`
+	PricingConfigured         bool
+	Currency                  string `gorm:"size:16"`
+	InputPricePerMillion      float64
+	OutputPricePerMillion     float64
+	CacheReadPricePerMillion  float64
+	CacheWritePricePerMillion float64
+	EstimatedCost             float64
+	DurationMS                int64
+	Success                   bool   `gorm:"not null"`
+	ErrMsg                    string `gorm:"type:text"`
+	CreatedAt                 time.Time
 }
 
 func (evaluationModelCallRecord) TableName() string {
@@ -56,6 +63,7 @@ func (e *evaluationStorage) recordModelCall(
 	observation types.LLMCallObservation,
 ) error {
 	usage := observation.Usage
+	pricing := observation.Pricing.Normalize()
 	record := &evaluationModelCallRecord{
 		ID: uuid.NewString(), TaskID: taskID, TenantID: tenantID,
 		ModelID: observation.ModelID, ModelName: observation.ModelName,
@@ -64,7 +72,12 @@ func (e *evaluationStorage) recordModelCall(
 		TotalTokens: usage.TotalTokens, CachedTokens: usage.CachedTokens,
 		CacheReadTokens: usage.CacheReadTokens, CacheWriteTokens: usage.CacheWriteTokens,
 		CacheMissTokens: usage.CacheMissTokens, CacheReported: usage.CacheReported,
-		CacheStatus: usage.CacheStatus, DurationMS: observation.DurationMS,
+		CacheStatus: usage.CacheStatus, PricingConfigured: pricing.Enabled,
+		Currency: pricing.Currency, InputPricePerMillion: pricing.InputPerMillion,
+		OutputPricePerMillion:     pricing.OutputPerMillion,
+		CacheReadPricePerMillion:  pricing.CacheReadPerMillion,
+		CacheWritePricePerMillion: pricing.CacheWritePerMillion,
+		EstimatedCost:             observation.EstimatedCost, DurationMS: observation.DurationMS,
 		Success: observation.Success, ErrMsg: observation.Error, CreatedAt: time.Now().UTC(),
 	}
 	return e.db.WithContext(ctx).Create(record).Error
@@ -83,7 +96,7 @@ func (e *evaluationStorage) getModelCalls(
 	}
 
 	calls := make([]types.EvaluationModelCall, 0, len(records))
-	usage := &types.EvaluationUsage{}
+	usage := &types.EvaluationUsage{CostByCurrency: make(map[string]float64)}
 	for _, record := range records {
 		callUsage := types.TokenUsage{
 			PromptTokens: record.PromptTokens, CompletionTokens: record.CompletionTokens,
@@ -95,7 +108,16 @@ func (e *evaluationStorage) getModelCalls(
 		calls = append(calls, types.EvaluationModelCall{
 			ID: record.ID, ModelID: record.ModelID, ModelName: record.ModelName,
 			Purpose: record.Purpose, PromptPrefixFingerprint: record.PromptPrefixFingerprint,
-			Usage: callUsage, DurationMS: record.DurationMS, Success: record.Success,
+			Usage: callUsage,
+			Pricing: types.LLMTokenPricing{
+				Enabled: record.PricingConfigured, Currency: record.Currency,
+				InputPerMillion:      record.InputPricePerMillion,
+				OutputPerMillion:     record.OutputPricePerMillion,
+				CacheReadPerMillion:  record.CacheReadPricePerMillion,
+				CacheWritePerMillion: record.CacheWritePricePerMillion,
+			},
+			EstimatedCost: record.EstimatedCost,
+			DurationMS:    record.DurationMS, Success: record.Success,
 			Error: record.ErrMsg, CreatedAt: record.CreatedAt,
 		})
 		accumulateEvaluationUsage(usage, record)
@@ -118,6 +140,12 @@ func accumulateEvaluationUsage(usage *types.EvaluationUsage, call evaluationMode
 	usage.CacheWriteTokens += call.CacheWriteTokens
 	usage.CacheMissTokens += call.CacheMissTokens
 	usage.ModelDurationMS += call.DurationMS
+	if call.PricingConfigured {
+		usage.PricedCalls++
+		usage.CostByCurrency[call.Currency] += call.EstimatedCost
+	} else {
+		usage.UnpricedCalls++
+	}
 	if call.CacheReported {
 		usage.CacheReportedCalls++
 		if call.CacheReadTokens > 0 {
