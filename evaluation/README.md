@@ -29,3 +29,23 @@ The checked-in fixture makes the CI gate deterministic. Running evaluations
 against a deployed WeKnora instance is intentionally not configured here: the
 deployment URL, API token, dataset, and result-retention policy must be approved
 before CI is allowed to send credentials or evaluation data to another system.
+
+## Compare cache optimization runs
+
+Capture the same document batch before and after enabling the optimization,
+then record the embedding request/provider-call counters and exported model
+calls in the JSON shape shown by `fixtures/cache_before.json`. The comparison
+command calculates embedding call reduction and Wiki provider-cache hit-rate
+change without uploading prompts, tokens, or credentials:
+
+```bash
+go run ./cmd/cachebench \
+  -before evaluation/fixtures/cache_before.json \
+  -after evaluation/fixtures/cache_after.json \
+  -report cache-comparison.json
+```
+
+The checked-in before/after files are deterministic examples for testing the
+calculation only; they are not claimed as measurements from a deployed model.
+Replace them with exports from two runs over the same documents, model, and
+chunking configuration for the submission report.

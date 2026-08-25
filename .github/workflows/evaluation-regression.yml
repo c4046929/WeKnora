@@ -28,7 +28,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Test evaluation metrics and gate
-        run: go test ./internal/application/service/metric ./cmd/evalgate
+        run: go test ./internal/application/service/metric ./cmd/evalgate ./cmd/cachebench
       - name: Verify checked-in regression fixture
         run: >-
           go run ./cmd/evalgate
@@ -41,4 +41,17 @@ jobs:
         with:
           name: evaluation-regression-report
           path: evaluation-report.json
+          if-no-files-found: warn
+      - name: Verify cache comparison example
+        run: >-
+          go run ./cmd/cachebench
+          -before evaluation/fixtures/cache_before.json
+          -after evaluation/fixtures/cache_after.json
+          -report cache-comparison.json
+      - name: Upload cache comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-comparison-report
+          path: cache-comparison.json
           if-no-files-found: warn
