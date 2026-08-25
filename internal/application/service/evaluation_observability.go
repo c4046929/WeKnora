@@ -192,9 +192,18 @@ type modelCostAggregateRow struct {
 func (e *evaluationStorage) modelUsage(
 	ctx context.Context,
 	tenantID uint64,
+	startTime, endTime *time.Time,
 ) ([]types.ModelUsageStat, error) {
 	var rows []modelUsageAggregateRow
-	err := e.db.WithContext(ctx).Model(&evaluationModelCallRecord{}).
+	usageQuery := e.db.WithContext(ctx).Model(&evaluationModelCallRecord{}).
+		Where("tenant_id = ?", tenantID)
+	if startTime != nil {
+		usageQuery = usageQuery.Where("created_at >= ?", *startTime)
+	}
+	if endTime != nil {
+		usageQuery = usageQuery.Where("created_at <= ?", *endTime)
+	}
+	err := usageQuery.
 		Select(`model_id, MAX(model_name) AS model_name,
 			COUNT(*) AS call_count,
 			SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successful_calls,
@@ -210,7 +219,6 @@ func (e *evaluationStorage) modelUsage(
 			COALESCE(SUM(duration_ms), 0) AS model_duration_ms,
 			SUM(CASE WHEN pricing_configured THEN 1 ELSE 0 END) AS priced_calls,
 			SUM(CASE WHEN pricing_configured THEN 0 ELSE 1 END) AS unpriced_calls`).
-		Where("tenant_id = ?", tenantID).
 		Group("model_id").
 		Order("model_name ASC").
 		Scan(&rows).Error
@@ -239,9 +247,16 @@ func (e *evaluationStorage) modelUsage(
 	}
 
 	var costs []modelCostAggregateRow
-	if err := e.db.WithContext(ctx).Model(&evaluationModelCallRecord{}).
+	costQuery := e.db.WithContext(ctx).Model(&evaluationModelCallRecord{}).
+		Where("tenant_id = ? AND pricing_configured = ?", tenantID, true)
+	if startTime != nil {
+		costQuery = costQuery.Where("created_at >= ?", *startTime)
+	}
+	if endTime != nil {
+		costQuery = costQuery.Where("created_at <= ?", *endTime)
+	}
+	if err := costQuery.
 		Select("model_id, currency, COALESCE(SUM(estimated_cost), 0) AS cost").
-		Where("tenant_id = ? AND pricing_configured = ?", tenantID, true).
 		Group("model_id, currency").
 		Scan(&costs).Error; err != nil {
 		return nil, err

@@ -214,9 +214,12 @@ func (e *EvaluationService) EvaluationResult(ctx context.Context, taskID string)
 	return detail, nil
 }
 
-// ModelUsage returns model-level evaluation usage for the current tenant.
-func (e *EvaluationService) ModelUsage(ctx context.Context) ([]types.ModelUsageStat, error) {
-	return e.evaluationStorage.modelUsage(ctx, types.MustTenantIDFromContext(ctx))
+// ModelUsage returns model-level evaluation usage for the current tenant and
+// optional inclusive time interval.
+func (e *EvaluationService) ModelUsage(
+	ctx context.Context, startTime, endTime *time.Time,
+) ([]types.ModelUsageStat, error) {
+	return e.evaluationStorage.modelUsage(ctx, types.MustTenantIDFromContext(ctx), startTime, endTime)
 }
 
 // Evaluation starts a new evaluation task with given parameters

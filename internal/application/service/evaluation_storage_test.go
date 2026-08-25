@@ -141,11 +141,22 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 	require.NoError(t, storage.recordModelCall(ctx, otherTenant.Task.ID, otherTenant.Task.TenantID,
 		types.LLMCallObservation{ModelID: "other-model", ModelName: "other", Success: true}))
 
-	stats, err := storage.modelUsage(ctx, detail.Task.TenantID)
+	stats, err := storage.modelUsage(ctx, detail.Task.TenantID, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, stats, 1)
 	require.Equal(t, "model-1", stats[0].ModelID)
 	require.Equal(t, 2, stats[0].Usage.CallCount)
 	require.Equal(t, 150, stats[0].Usage.PromptTokens)
 	require.InDelta(t, 0.0012, stats[0].Usage.CostByCurrency["USD"], 0.0000001)
+
+	require.NoError(t, storage.db.Model(&evaluationModelCallRecord{}).
+		Where("purpose = ?", "query_rewrite").
+		Update("created_at", startedAt.Add(-48*time.Hour)).Error)
+	windowStart := startedAt.Add(-time.Hour)
+	windowStats, err := storage.modelUsage(ctx, detail.Task.TenantID, &windowStart, nil)
+	require.NoError(t, err)
+	require.Len(t, windowStats, 1)
+	require.Equal(t, 1, windowStats[0].Usage.CallCount)
+	require.Equal(t, 50, windowStats[0].Usage.PromptTokens)
+	require.Empty(t, windowStats[0].Usage.CostByCurrency)
 }
