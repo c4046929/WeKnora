@@ -214,6 +214,11 @@ func (e *EvaluationService) EvaluationResult(ctx context.Context, taskID string)
 	return detail, nil
 }
 
+// ModelUsage returns model-level evaluation usage for the current tenant.
+func (e *EvaluationService) ModelUsage(ctx context.Context) ([]types.ModelUsageStat, error) {
+	return e.evaluationStorage.modelUsage(ctx, types.MustTenantIDFromContext(ctx))
+}
+
 // Evaluation starts a new evaluation task with given parameters
 // datasetID: ID of the dataset to evaluate against
 // knowledgeBaseID: ID of the knowledge base to use (empty to create new)

@@ -129,4 +129,23 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 	require.True(t, loaded.ModelCalls[0].Pricing.Enabled)
 	require.Equal(t, "USD", loaded.ModelCalls[0].Pricing.Currency)
 	require.InDelta(t, 0.0012, loaded.ModelCalls[0].EstimatedCost, 0.0000001)
+
+	otherTenant := &types.EvaluationDetail{
+		Task: &types.EvaluationTask{
+			ID: "evaluation-other-tenant", TenantID: 9, DatasetID: "dataset-3",
+			StartTime: startedAt, Status: types.EvaluationStatueRunning,
+		},
+		Params: &types.ChatManage{},
+	}
+	require.NoError(t, storage.register(ctx, otherTenant))
+	require.NoError(t, storage.recordModelCall(ctx, otherTenant.Task.ID, otherTenant.Task.TenantID,
+		types.LLMCallObservation{ModelID: "other-model", ModelName: "other", Success: true}))
+
+	stats, err := storage.modelUsage(ctx, detail.Task.TenantID)
+	require.NoError(t, err)
+	require.Len(t, stats, 1)
+	require.Equal(t, "model-1", stats[0].ModelID)
+	require.Equal(t, 2, stats[0].Usage.CallCount)
+	require.Equal(t, 150, stats[0].Usage.PromptTokens)
+	require.InDelta(t, 0.0012, stats[0].Usage.CostByCurrency["USD"], 0.0000001)
 }
