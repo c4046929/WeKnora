@@ -227,7 +227,7 @@ func (e *evaluationStorage) modelUsage(
 	}
 
 	stats := make([]types.ModelUsageStat, 0, len(rows))
-	byModelID := make(map[string]*types.ModelUsageStat, len(rows))
+	indexByModelID := make(map[string]int, len(rows))
 	for _, row := range rows {
 		usage := types.EvaluationUsage{
 			CallCount: row.CallCount, SuccessfulCalls: row.SuccessfulCalls,
@@ -243,7 +243,7 @@ func (e *evaluationStorage) modelUsage(
 		stats = append(stats, types.ModelUsageStat{
 			ModelID: row.ModelID, ModelName: row.ModelName, Usage: usage,
 		})
-		byModelID[row.ModelID] = &stats[len(stats)-1]
+		indexByModelID[row.ModelID] = len(stats) - 1
 	}
 
 	var costs []modelCostAggregateRow
@@ -262,8 +262,8 @@ func (e *evaluationStorage) modelUsage(
 		return nil, err
 	}
 	for _, cost := range costs {
-		if stat := byModelID[cost.ModelID]; stat != nil {
-			stat.Usage.CostByCurrency[cost.Currency] = cost.Cost
+		if index, ok := indexByModelID[cost.ModelID]; ok {
+			stats[index].Usage.CostByCurrency[cost.Currency] = cost.Cost
 		}
 	}
 	return stats, nil

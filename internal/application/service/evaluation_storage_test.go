@@ -61,6 +61,37 @@ func TestEvaluationStoragePersistsAcrossInstances(t *testing.T) {
 	require.Equal(t, 1.0, loaded.Metric.RetrievalMetrics.Recall)
 }
 
+func TestModelUsagePreservesCostsForMultipleModels(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "model-usage.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&evaluationRecord{}, &evaluationModelCallRecord{}))
+	storage := newEvaluationStorage(db)
+	ctx := context.Background()
+
+	for _, call := range []types.LLMCallObservation{
+		{
+			ModelID: "model-a", ModelName: "Model A", Success: true,
+			Pricing: types.LLMTokenPricing{Enabled: true, Currency: "USD"}, EstimatedCost: 0.1,
+		},
+		{
+			ModelID: "model-b", ModelName: "Model B", Success: true,
+			Pricing: types.LLMTokenPricing{Enabled: true, Currency: "CNY"}, EstimatedCost: 0.2,
+		},
+	} {
+		require.NoError(t, storage.recordModelCall(ctx, "task", 7, call))
+	}
+
+	stats, err := storage.modelUsage(ctx, 7, nil, nil)
+	require.NoError(t, err)
+	require.Len(t, stats, 2)
+	byID := map[string]types.ModelUsageStat{}
+	for _, stat := range stats {
+		byID[stat.ModelID] = stat
+	}
+	require.InDelta(t, 0.1, byID["model-a"].Usage.CostByCurrency["USD"], 0.000001)
+	require.InDelta(t, 0.2, byID["model-b"].Usage.CostByCurrency["CNY"], 0.000001)
+}
+
 func TestEvaluationStorageReturnsTaskNotFound(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evaluation.db")), &gorm.Config{})
 	require.NoError(t, err)
