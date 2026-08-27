@@ -210,7 +210,7 @@ const usageLabels = computed(() => {
   const lang = String(locale.value).toLowerCase()
   if (lang.startsWith('zh')) return {
     calls: '调用', tokens: 'Token', cache: '缓存', cacheHitRate: '缓存命中率',
-    estimatedCost: '评测估算成本', unpriced: '该模型尚未配置 Token 单价', costUnknown: '成本未配置', range: '用量区间',
+    estimatedCost: '估算成本', unpriced: '该模型尚未配置 Token 单价', costUnknown: '成本未配置', range: '用量区间',
   }
   if (lang.startsWith('ko')) return {
     calls: '호출', tokens: 'Token', cache: '캐시', cacheHitRate: '캐시 적중률',
@@ -222,7 +222,7 @@ const usageLabels = computed(() => {
   }
   return {
     calls: 'Calls', tokens: 'Tokens', cache: 'Cache', cacheHitRate: 'Cache hit rate',
-    estimatedCost: 'Estimated evaluation cost', unpriced: 'Token pricing is not configured', costUnknown: 'Cost unavailable', range: 'Usage period',
+    estimatedCost: 'Estimated cost', unpriced: 'Token pricing is not configured', costUnknown: 'Cost unavailable', range: 'Usage period',
   }
 })
 

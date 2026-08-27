@@ -524,7 +524,7 @@ const uiStore = useUIStore()
 const pricingLabels = computed(() => {
   const lang = String(locale.value).toLowerCase()
   if (lang.startsWith('zh')) return {
-    title: 'Token 成本估算', description: '为评测调用计算成本并保存价格快照', currency: '币种',
+    title: 'Token 成本估算', description: '为模型调用计算成本并保存价格快照', currency: '币种',
     input: '普通输入', output: '模型输出', cacheRead: '缓存读取', cacheWrite: '缓存写入', unit: '单价单位：每百万 Token',
   }
   if (lang.startsWith('ko')) return {
@@ -536,7 +536,7 @@ const pricingLabels = computed(() => {
     input: 'Обычный ввод', output: 'Вывод модели', cacheRead: 'Чтение кэша', cacheWrite: 'Запись кэша', unit: 'Цена за миллион токенов',
   }
   return {
-    title: 'Token cost estimation', description: 'Estimate evaluation cost and preserve a pricing snapshot', currency: 'Currency',
+    title: 'Token cost estimation', description: 'Estimate model-call cost and preserve a pricing snapshot', currency: 'Currency',
     input: 'Regular input', output: 'Model output', cacheRead: 'Cache read', cacheWrite: 'Cache write', unit: 'Price per one million tokens',
   }
 })

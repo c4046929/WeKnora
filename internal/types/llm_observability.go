@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"strings"
+	"sync"
 )
 
 // LLMTokenPricing is a user-configured price snapshot expressed per one
@@ -50,6 +51,7 @@ func (p LLMTokenPricing) Normalize() LLMTokenPricing {
 // completed model call. Prompt content is intentionally excluded; only the
 // stable prefix fingerprint is retained for cache analysis.
 type LLMCallObservation struct {
+	TenantID                uint64
 	ModelID                 string
 	ModelName               string
 	Purpose                 string
@@ -69,6 +71,26 @@ type LLMCallObserver interface {
 }
 
 type llmCallObserverContextKey struct{}
+
+var processLLMCallObserver struct {
+	sync.RWMutex
+	observer LLMCallObserver
+}
+
+// SetGlobalLLMCallObserver sets the fallback observer for model calls that do
+// not already have a request-scoped observer. Passing nil disables it.
+func SetGlobalLLMCallObserver(observer LLMCallObserver) {
+	processLLMCallObserver.Lock()
+	processLLMCallObserver.observer = observer
+	processLLMCallObserver.Unlock()
+}
+
+// GlobalLLMCallObserver returns the process-wide fallback observer, if set.
+func GlobalLLMCallObserver() (LLMCallObserver, bool) {
+	processLLMCallObserver.RLock()
+	defer processLLMCallObserver.RUnlock()
+	return processLLMCallObserver.observer, processLLMCallObserver.observer != nil
+}
 
 // WithLLMCallObserver attaches a request-scoped model-call observer.
 func WithLLMCallObserver(ctx context.Context, observer LLMCallObserver) context.Context {

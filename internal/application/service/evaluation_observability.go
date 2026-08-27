@@ -10,13 +10,13 @@ import (
 )
 
 type evaluationModelCallRecord struct {
-	ID                        string `gorm:"primaryKey;size:36"`
-	TaskID                    string `gorm:"size:255;not null;index"`
-	TenantID                  uint64 `gorm:"not null;index"`
-	ModelID                   string `gorm:"size:255"`
-	ModelName                 string `gorm:"size:255;not null"`
-	Purpose                   string `gorm:"size:100"`
-	PromptPrefixFingerprint   string `gorm:"size:128"`
+	ID                        string  `gorm:"primaryKey;size:36"`
+	TaskID                    *string `gorm:"size:255;index"`
+	TenantID                  uint64  `gorm:"not null;index"`
+	ModelID                   string  `gorm:"size:255"`
+	ModelName                 string  `gorm:"size:255;not null"`
+	Purpose                   string  `gorm:"size:100"`
+	PromptPrefixFingerprint   string  `gorm:"size:128"`
 	PromptTokens              int
 	CompletionTokens          int
 	TotalTokens               int
@@ -62,9 +62,20 @@ func (e *evaluationStorage) recordModelCall(
 	tenantID uint64,
 	observation types.LLMCallObservation,
 ) error {
+	taskIDCopy := taskID
+	record := newModelCallRecord(&taskIDCopy, tenantID, observation, time.Now().UTC())
+	return e.db.WithContext(ctx).Create(record).Error
+}
+
+func newModelCallRecord(
+	taskID *string,
+	tenantID uint64,
+	observation types.LLMCallObservation,
+	createdAt time.Time,
+) *evaluationModelCallRecord {
 	usage := observation.Usage
 	pricing := observation.Pricing.Normalize()
-	record := &evaluationModelCallRecord{
+	return &evaluationModelCallRecord{
 		ID: uuid.NewString(), TaskID: taskID, TenantID: tenantID,
 		ModelID: observation.ModelID, ModelName: observation.ModelName,
 		Purpose: observation.Purpose, PromptPrefixFingerprint: observation.PromptPrefixFingerprint,
@@ -78,9 +89,8 @@ func (e *evaluationStorage) recordModelCall(
 		CacheReadPricePerMillion:  pricing.CacheReadPerMillion,
 		CacheWritePricePerMillion: pricing.CacheWritePerMillion,
 		EstimatedCost:             observation.EstimatedCost, DurationMS: observation.DurationMS,
-		Success: observation.Success, ErrMsg: observation.Error, CreatedAt: time.Now().UTC(),
+		Success: observation.Success, ErrMsg: observation.Error, CreatedAt: createdAt,
 	}
-	return e.db.WithContext(ctx).Create(record).Error
 }
 
 func (e *evaluationStorage) getModelCalls(
