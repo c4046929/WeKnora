@@ -52,6 +52,7 @@ func (p LLMTokenPricing) Normalize() LLMTokenPricing {
 // stable prefix fingerprint is retained for cache analysis.
 type LLMCallObservation struct {
 	TenantID                uint64
+	ModelType               ModelType
 	ModelID                 string
 	ModelName               string
 	Purpose                 string
@@ -90,6 +91,25 @@ func GlobalLLMCallObserver() (LLMCallObserver, bool) {
 	processLLMCallObserver.RLock()
 	defer processLLMCallObserver.RUnlock()
 	return processLLMCallObserver.observer, processLLMCallObserver.observer != nil
+}
+
+// DispatchLLMCallObservation prefers a request-scoped observer and otherwise
+// uses the process observer only when the context carries a real tenant.
+func DispatchLLMCallObservation(ctx context.Context, observation LLMCallObservation) {
+	observer, requestScoped := LLMCallObserverFromContext(ctx)
+	if !requestScoped {
+		var ok bool
+		observer, ok = GlobalLLMCallObserver()
+		if !ok {
+			return
+		}
+	}
+	tenantID, tenantScoped := TenantIDFromContext(ctx)
+	if !requestScoped && !tenantScoped {
+		return
+	}
+	observation.TenantID = tenantID
+	observer.ObserveLLMCall(observation)
 }
 
 // WithLLMCallObserver attaches a request-scoped model-call observer.

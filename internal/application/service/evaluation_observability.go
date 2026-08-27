@@ -10,13 +10,14 @@ import (
 )
 
 type evaluationModelCallRecord struct {
-	ID                        string  `gorm:"primaryKey;size:36"`
-	TaskID                    *string `gorm:"size:255;index"`
-	TenantID                  uint64  `gorm:"not null;index"`
-	ModelID                   string  `gorm:"size:255"`
-	ModelName                 string  `gorm:"size:255;not null"`
-	Purpose                   string  `gorm:"size:100"`
-	PromptPrefixFingerprint   string  `gorm:"size:128"`
+	ID                        string          `gorm:"primaryKey;size:36"`
+	TaskID                    *string         `gorm:"size:255;index"`
+	TenantID                  uint64          `gorm:"not null;index"`
+	ModelType                 types.ModelType `gorm:"size:32;not null"`
+	ModelID                   string          `gorm:"size:255"`
+	ModelName                 string          `gorm:"size:255;not null"`
+	Purpose                   string          `gorm:"size:100"`
+	PromptPrefixFingerprint   string          `gorm:"size:128"`
 	PromptTokens              int
 	CompletionTokens          int
 	TotalTokens               int
@@ -76,7 +77,7 @@ func newModelCallRecord(
 	usage := observation.Usage
 	pricing := observation.Pricing.Normalize()
 	return &evaluationModelCallRecord{
-		ID: uuid.NewString(), TaskID: taskID, TenantID: tenantID,
+		ID: uuid.NewString(), TaskID: taskID, TenantID: tenantID, ModelType: observation.ModelType,
 		ModelID: observation.ModelID, ModelName: observation.ModelName,
 		Purpose: observation.Purpose, PromptPrefixFingerprint: observation.PromptPrefixFingerprint,
 		PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens,
@@ -117,7 +118,8 @@ func (e *evaluationStorage) getModelCalls(
 		}
 		calls = append(calls, types.EvaluationModelCall{
 			ID: record.ID, ModelID: record.ModelID, ModelName: record.ModelName,
-			Purpose: record.Purpose, PromptPrefixFingerprint: record.PromptPrefixFingerprint,
+			ModelType: record.ModelType,
+			Purpose:   record.Purpose, PromptPrefixFingerprint: record.PromptPrefixFingerprint,
 			Usage: callUsage,
 			Pricing: types.LLMTokenPricing{
 				Enabled: record.PricingConfigured, Currency: record.Currency,
@@ -177,6 +179,7 @@ func finalizeEvaluationUsage(usage *types.EvaluationUsage) {
 type modelUsageAggregateRow struct {
 	ModelID            string
 	ModelName          string
+	ModelType          types.ModelType
 	CallCount          int
 	SuccessfulCalls    int
 	FailedCalls        int
@@ -214,7 +217,7 @@ func (e *evaluationStorage) modelUsage(
 		usageQuery = usageQuery.Where("created_at <= ?", *endTime)
 	}
 	err := usageQuery.
-		Select(`model_id, MAX(model_name) AS model_name,
+		Select(`model_id, MAX(model_name) AS model_name, MAX(model_type) AS model_type,
 			COUNT(*) AS call_count,
 			SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successful_calls,
 			SUM(CASE WHEN success THEN 0 ELSE 1 END) AS failed_calls,
@@ -251,7 +254,7 @@ func (e *evaluationStorage) modelUsage(
 		}
 		finalizeEvaluationUsage(&usage)
 		stats = append(stats, types.ModelUsageStat{
-			ModelID: row.ModelID, ModelName: row.ModelName, Usage: usage,
+			ModelID: row.ModelID, ModelName: row.ModelName, ModelType: row.ModelType, Usage: usage,
 		})
 		indexByModelID[row.ModelID] = len(stats) - 1
 	}

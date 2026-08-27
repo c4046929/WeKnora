@@ -2,10 +2,13 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -70,6 +73,7 @@ type evaluationRecord struct {
 	Total      int
 	Finished   int
 	Params     json.RawMessage `gorm:"type:jsonb;not null"`
+	RunConfig  json.RawMessage `gorm:"type:jsonb;not null"`
 	Metric     json.RawMessage `gorm:"type:jsonb"`
 	StartedAt  time.Time       `gorm:"not null"`
 	FinishedAt *time.Time
@@ -151,6 +155,10 @@ func evaluationDetailToRecord(detail *types.EvaluationDetail) (*evaluationRecord
 	if err != nil {
 		return nil, fmt.Errorf("marshal evaluation params: %w", err)
 	}
+	runConfig, err := json.Marshal(detail.RunConfig)
+	if err != nil {
+		return nil, fmt.Errorf("marshal evaluation run config: %w", err)
+	}
 	metric, err := json.Marshal(detail.Metric)
 	if err != nil {
 		return nil, fmt.Errorf("marshal evaluation metric: %w", err)
@@ -158,7 +166,7 @@ func evaluationDetailToRecord(detail *types.EvaluationDetail) (*evaluationRecord
 	return &evaluationRecord{
 		ID: detail.Task.ID, TenantID: detail.Task.TenantID, DatasetID: detail.Task.DatasetID,
 		Status: detail.Task.Status, ErrMsg: detail.Task.ErrMsg, Total: detail.Task.Total,
-		Finished: detail.Task.Finished, Params: params, Metric: metric,
+		Finished: detail.Task.Finished, Params: params, RunConfig: runConfig, Metric: metric,
 		StartedAt: detail.Task.StartTime, FinishedAt: detail.Task.EndTime,
 		DurationMS: detail.Task.DurationMS,
 	}, nil
@@ -176,6 +184,13 @@ func evaluationRecordToDetail(record *evaluationRecord) (*types.EvaluationDetail
 			return nil, fmt.Errorf("unmarshal evaluation metric: %w", err)
 		}
 	}
+	var runConfig *types.EvaluationRunConfig
+	if len(record.RunConfig) > 0 && string(record.RunConfig) != "null" && string(record.RunConfig) != "{}" {
+		runConfig = &types.EvaluationRunConfig{}
+		if err := json.Unmarshal(record.RunConfig, runConfig); err != nil {
+			return nil, fmt.Errorf("unmarshal evaluation run config: %w", err)
+		}
+	}
 	return &types.EvaluationDetail{
 		Task: &types.EvaluationTask{
 			ID: record.ID, TenantID: record.TenantID, DatasetID: record.DatasetID,
@@ -183,8 +198,9 @@ func evaluationRecordToDetail(record *evaluationRecord) (*types.EvaluationDetail
 			DurationMS: record.DurationMS, Status: record.Status, ErrMsg: record.ErrMsg,
 			Total: record.Total, Finished: record.Finished,
 		},
-		Params: &params,
-		Metric: metric,
+		Params:    &params,
+		RunConfig: runConfig,
+		Metric:    metric,
 	}, nil
 }
 
@@ -237,6 +253,20 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	// Get tenant ID from context for multi-tenancy support
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
+	if datasetID == "" {
+		datasetID = "default"
+		logger.Info(ctx, "Using default dataset")
+	}
+	dataset, err := e.dataset.GetDatasetByID(ctx, datasetID)
+	if err != nil {
+		return nil, fmt.Errorf("load evaluation dataset: %w", err)
+	}
+	datasetFingerprint, err := fingerprintEvaluationDataset(dataset)
+	if err != nil {
+		return nil, err
+	}
+	sourceKnowledgeBaseID := knowledgeBaseID
+	var evaluationKB *types.KnowledgeBase
 
 	// Handle knowledge base creation if not provided
 	if knowledgeBaseID == "" {
@@ -277,34 +307,31 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			return nil, err
 		}
 		knowledgeBaseID = kb.ID
+		evaluationKB = kb
 		logger.Infof(ctx, "Created new knowledge base with ID: %s", knowledgeBaseID)
 	} else {
 		logger.Infof(ctx, "Using existing knowledge base ID: %s", knowledgeBaseID)
 		// Create evaluation-specific knowledge base based on existing one
-		kb, err := e.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseID)
+		sourceKB, err := e.knowledgeBaseService.GetKnowledgeBaseByID(ctx, knowledgeBaseID)
 		if err != nil {
 			logger.Errorf(ctx, "Failed to get knowledge base: %v", err)
 			return nil, err
 		}
 
-		kb, err = e.knowledgeBaseService.CreateKnowledgeBase(ctx, &types.KnowledgeBase{
+		kb, err := e.knowledgeBaseService.CreateKnowledgeBase(ctx, &types.KnowledgeBase{
 			Name:             "evaluation",
 			Description:      "evaluation",
-			EmbeddingModelID: kb.EmbeddingModelID,
-			SummaryModelID:   kb.SummaryModelID,
+			EmbeddingModelID: sourceKB.EmbeddingModelID,
+			SummaryModelID:   sourceKB.SummaryModelID,
+			ChunkingConfig:   sourceKB.ChunkingConfig,
 		})
 		if err != nil {
 			logger.Errorf(ctx, "Failed to create knowledge base: %v", err)
 			return nil, err
 		}
 		knowledgeBaseID = kb.ID
+		evaluationKB = kb
 		logger.Infof(ctx, "Created new knowledge base with ID: %s based on existing one", knowledgeBaseID)
-	}
-
-	// Set default values for optional parameters
-	if datasetID == "" {
-		datasetID = "default"
-		logger.Info(ctx, "Using default dataset")
 	}
 
 	if rerankModelID == "" {
@@ -392,6 +419,14 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			},
 		},
 	}
+	runConfig, err := e.buildEvaluationRunConfig(
+		ctx, datasetID, datasetFingerprint, len(dataset), sourceKnowledgeBaseID,
+		evaluationKB, detail.Params.PipelineRequest, chatModelID, rerankModelID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	detail.RunConfig = runConfig
 
 	// Persist the evaluation task before starting background work.
 	logger.Info(ctx, "Registering evaluation task")
@@ -420,7 +455,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 		logger.Info(newCtx, "Evaluation task status set to running")
 
 		// Execute actual evaluation
-		if err := e.EvalDataset(newCtx, detail, knowledgeBaseID); err != nil {
+		if err := e.EvalDataset(newCtx, detail, knowledgeBaseID, dataset); err != nil {
 			finishedAt := time.Now()
 			if updateErr := e.evaluationStorage.update(newCtx, taskID, func(current *types.EvaluationDetail) {
 				current.Task.Status = types.EvaluationStatueFailed
@@ -452,16 +487,15 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 
 // EvalDataset performs the actual evaluation of a dataset
 // Processes each QA pair in parallel and records metrics
-func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.EvaluationDetail, knowledgeBaseID string) error {
+func (e *EvaluationService) EvalDataset(
+	ctx context.Context,
+	detail *types.EvaluationDetail,
+	knowledgeBaseID string,
+	dataset []*types.QAPair,
+) error {
 	logger.Info(ctx, "Start evaluating dataset")
 	logger.Infof(ctx, "Task ID: %s, Dataset ID: %s", detail.Task.ID, detail.Task.DatasetID)
 
-	// Retrieve dataset from storage
-	dataset, err := e.dataset.GetDatasetByID(ctx, detail.Task.DatasetID)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to get dataset: %v", err)
-		return err
-	}
 	logger.Infof(ctx, "Dataset retrieved successfully with %d QA pairs", len(dataset))
 
 	// Update total QA pairs count in task details
@@ -581,6 +615,89 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 
 	logger.Infof(ctx, "Dataset evaluation completed successfully, task ID: %s", detail.Task.ID)
 	return nil
+}
+
+func fingerprintEvaluationDataset(dataset []*types.QAPair) (string, error) {
+	encoded, err := json.Marshal(dataset)
+	if err != nil {
+		return "", fmt.Errorf("fingerprint evaluation dataset: %w", err)
+	}
+	return fmt.Sprintf("sha256:%x", sha256.Sum256(encoded)), nil
+}
+
+func (e *EvaluationService) buildEvaluationRunConfig(
+	ctx context.Context,
+	datasetID, datasetFingerprint string,
+	datasetSamples int,
+	sourceKnowledgeBaseID string,
+	evaluationKB *types.KnowledgeBase,
+	pipeline types.PipelineRequest,
+	chatModelID, rerankModelID string,
+) (*types.EvaluationRunConfig, error) {
+	if evaluationKB == nil {
+		return nil, errors.New("evaluation knowledge base was not created")
+	}
+	modelRoles := []struct{ role, id string }{
+		{role: "embedding", id: evaluationKB.EmbeddingModelID},
+		{role: "chat", id: chatModelID},
+		{role: "rerank", id: rerankModelID},
+	}
+	models := make([]types.EvaluationModelSnapshot, 0, len(modelRoles))
+	for _, item := range modelRoles {
+		if item.id == "" {
+			continue
+		}
+		model, err := e.modelService.GetModelByID(ctx, item.id)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot %s model %q: %w", item.role, item.id, err)
+		}
+		models = append(models, snapshotEvaluationModel(item.role, model))
+	}
+	return &types.EvaluationRunConfig{
+		SchemaVersion: 1, DatasetID: datasetID, DatasetFingerprint: datasetFingerprint,
+		DatasetSamples: datasetSamples, SourceKnowledgeBaseID: sourceKnowledgeBaseID,
+		EvaluationKnowledgeBaseID: evaluationKB.ID, Chunking: evaluationKB.ChunkingConfig,
+		Pipeline: pipeline, Models: models, CodeVersion: evaluationCodeVersion(),
+	}, nil
+}
+
+func snapshotEvaluationModel(role string, model *types.Model) types.EvaluationModelSnapshot {
+	config := struct {
+		Name                 string            `json:"name"`
+		Type                 types.ModelType   `json:"type"`
+		Source               types.ModelSource `json:"source"`
+		Provider             string            `json:"provider"`
+		Dimensions           int               `json:"dimensions"`
+		TruncatePromptTokens int               `json:"truncate_prompt_tokens"`
+		InterfaceType        string            `json:"interface_type"`
+	}{
+		Name: model.Name, Type: model.Type, Source: model.Source,
+		Provider:             model.Parameters.Provider,
+		Dimensions:           model.Parameters.EmbeddingParameters.Dimension,
+		TruncatePromptTokens: model.Parameters.EmbeddingParameters.TruncatePromptTokens,
+		InterfaceType:        model.Parameters.InterfaceType,
+	}
+	encoded, _ := json.Marshal(config)
+	return types.EvaluationModelSnapshot{
+		Role: role, ID: model.ID, Name: model.Name, DisplayName: model.DisplayName,
+		Type: model.Type, Source: model.Source, Provider: model.Parameters.Provider,
+		Dimensions:        model.Parameters.EmbeddingParameters.Dimension,
+		ConfigFingerprint: fmt.Sprintf("sha256:%x", sha256.Sum256(encoded)), UpdatedAt: model.UpdatedAt,
+	}
+}
+
+func evaluationCodeVersion() string {
+	if revision := os.Getenv("WEKNORA_BUILD_COMMIT"); revision != "" {
+		return revision
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" && setting.Value != "" {
+				return setting.Value
+			}
+		}
+	}
+	return "unknown"
 }
 
 // getPassageList extracts and organizes passages from QA pairs

@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -20,6 +25,42 @@ func TestEvaluatePassesThresholds(t *testing.T) {
 	})
 	require.True(t, report.Passed)
 	require.Len(t, report.Checks, 5)
+}
+
+func TestRunLocalEvaluationStartsAndPollsToCompletion(t *testing.T) {
+	var polls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		require.Equal(t, "Bearer test-key", request.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method == http.MethodPost {
+			_, _ = w.Write([]byte(`{"success":true,"data":{"task":{"id":"task-1","status":0}}}`))
+			return
+		}
+		require.Equal(t, "task-1", request.URL.Query().Get("task_id"))
+		if polls.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{"success":true,"data":{"task":{"id":"task-1","status":1}}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"data":{"task":{"id":"task-1","status":2,"total":1,"finished":1}}}`))
+	}))
+	defer server.Close()
+
+	result, err := runLocalEvaluation(context.Background(), localEvaluationOptions{
+		BaseURL: server.URL, APIKey: "test-key", DatasetID: "default",
+		PollInterval: time.Millisecond, Client: server.Client(),
+	})
+	require.NoError(t, err)
+	status, ok := lookup(unwrapAPIData(result), "task.status")
+	require.True(t, ok)
+	require.Equal(t, float64(2), status)
+	require.Equal(t, int32(2), polls.Load())
+}
+
+func TestRunLocalEvaluationRejectsNonLoopbackURL(t *testing.T) {
+	_, err := runLocalEvaluation(context.Background(), localEvaluationOptions{
+		BaseURL: "https://example.com", PollInterval: time.Second,
+	})
+	require.ErrorContains(t, err, "localhost or a loopback IP")
 }
 
 func TestEvaluateReportsMissingAndRegression(t *testing.T) {

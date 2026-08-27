@@ -21,6 +21,7 @@ type embeddingRun struct {
 }
 
 type modelCall struct {
+	ModelType     string  `json:"model_type"`
 	Purpose       string  `json:"purpose"`
 	Usage         usage   `json:"usage"`
 	Pricing       pricing `json:"pricing"`
@@ -172,6 +173,15 @@ func readRun(path string) (runInput, error) {
 	}
 	if run.Embedding.ProviderCalls < 0 || run.Embedding.RequestedTexts < 0 {
 		return runInput{}, errors.New("embedding counters must be non-negative")
+	}
+	// Evaluation result files already contain task-scoped model calls. Derive
+	// provider calls from them so users do not need a separate telemetry export.
+	if run.Embedding.ProviderCalls == 0 {
+		for _, call := range allCalls(run) {
+			if strings.EqualFold(call.ModelType, "Embedding") {
+				run.Embedding.ProviderCalls++
+			}
+		}
 	}
 	return run, nil
 }

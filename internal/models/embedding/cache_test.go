@@ -2,9 +2,11 @@ package embedding
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,6 +16,61 @@ type cacheTestEmbedder struct {
 	batchCalls    int
 	pooledCalls   int
 	returnedCount int
+}
+
+type cacheTestPersistentBackend struct {
+	mu      sync.Mutex
+	vectors map[string][]float32
+}
+
+func (b *cacheTestPersistentBackend) Get(
+	_ context.Context, keys []string, _ time.Time,
+) (map[string][]float32, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	result := make(map[string][]float32)
+	for _, key := range keys {
+		if vector, ok := b.vectors[key]; ok {
+			result[key] = cloneVector(vector)
+		}
+	}
+	return result, nil
+}
+
+func (b *cacheTestPersistentBackend) Put(
+	_ context.Context, _ string, vectors map[string][]float32, _ time.Time,
+) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for key, vector := range vectors {
+		b.vectors[key] = cloneVector(vector)
+	}
+	return nil
+}
+
+func TestCachedEmbedderReusesPersistentTenantEntryAcrossInstances(t *testing.T) {
+	backend := &cacheTestPersistentBackend{vectors: make(map[string][]float32)}
+	SetPersistentCache(backend)
+	t.Cleanup(func() { SetPersistentCache(nil) })
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(11))
+
+	firstInner := &cacheTestEmbedder{modelID: "persistent-model"}
+	first := newTestCachedEmbedder(firstInner)
+	_, err := first.Embed(ctx, "same text")
+	require.NoError(t, err)
+	require.Equal(t, 1, firstInner.embedCalls)
+
+	secondInner := &cacheTestEmbedder{modelID: "persistent-model"}
+	second := newTestCachedEmbedder(secondInner)
+	vector, err := second.Embed(ctx, "same text")
+	require.NoError(t, err)
+	require.Equal(t, cacheTestVector("same text"), vector)
+	require.Zero(t, secondInner.embedCalls)
+
+	otherTenant := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(12))
+	_, err = second.Embed(otherTenant, "same text")
+	require.NoError(t, err)
+	require.Equal(t, 1, secondInner.embedCalls)
 }
 
 func (e *cacheTestEmbedder) Embed(_ context.Context, text string) ([]float32, error) {

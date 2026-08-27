@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 const (
@@ -31,6 +33,32 @@ type embeddingCacheEntry struct {
 	key       string
 	vector    []float32
 	expiresAt time.Time
+}
+
+// PersistentCache stores only tenant-scoped hash keys and vectors; raw input
+// text is never exposed to the backend.
+type PersistentCache interface {
+	Get(ctx context.Context, keys []string, now time.Time) (map[string][]float32, error)
+	Put(ctx context.Context, modelID string, vectors map[string][]float32, expiresAt time.Time) error
+}
+
+var persistentEmbeddingCache struct {
+	sync.RWMutex
+	backend PersistentCache
+}
+
+// SetPersistentCache installs the process-wide durable cache backend. Passing
+// nil disables persistence while retaining the bounded in-memory LRU.
+func SetPersistentCache(backend PersistentCache) {
+	persistentEmbeddingCache.Lock()
+	persistentEmbeddingCache.backend = backend
+	persistentEmbeddingCache.Unlock()
+}
+
+func getPersistentCache() PersistentCache {
+	persistentEmbeddingCache.RLock()
+	defer persistentEmbeddingCache.RUnlock()
+	return persistentEmbeddingCache.backend
 }
 
 // embeddingCacheStore is shared across model instances because modelService
@@ -108,15 +136,26 @@ type cachedEmbedder struct {
 }
 
 func (c *cachedEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	key := c.key(text)
+	key := c.key(ctx, text)
 	if vector, ok := c.store.get(key, c.now()); ok {
 		return vector, nil
+	}
+	if backend := c.persistentBackend(ctx); backend != nil {
+		vectors, err := backend.Get(ctx, []string{key}, c.now())
+		if err == nil {
+			if vector, ok := vectors[key]; ok {
+				c.store.put(key, vector, c.now().Add(c.options.ttl), c.options.maxEntries)
+				return cloneVector(vector), nil
+			}
+		}
 	}
 	vector, err := c.inner.Embed(ctx, text)
 	if err != nil {
 		return nil, err
 	}
-	c.store.put(key, vector, c.now().Add(c.options.ttl), c.options.maxEntries)
+	expiresAt := c.now().Add(c.options.ttl)
+	c.store.put(key, vector, expiresAt, c.options.maxEntries)
+	c.persist(ctx, map[string][]float32{key: vector}, expiresAt)
 	return cloneVector(vector), nil
 }
 
@@ -150,7 +189,7 @@ func (c *cachedEmbedder) batchEmbed(
 	now := c.now()
 
 	for index, text := range texts {
-		key := c.key(text)
+		key := c.key(ctx, text)
 		if vector, ok := c.store.get(key, now); ok {
 			results[index] = vector
 			continue
@@ -161,6 +200,27 @@ func (c *cachedEmbedder) batchEmbed(
 		}
 		missByKey[key] = len(misses)
 		misses = append(misses, miss{key: key, text: text, indices: []int{index}})
+	}
+	if backend := c.persistentBackend(ctx); backend != nil && len(misses) > 0 {
+		keys := make([]string, len(misses))
+		for index := range misses {
+			keys[index] = misses[index].key
+		}
+		if persisted, err := backend.Get(ctx, keys, now); err == nil && len(persisted) > 0 {
+			remaining := misses[:0]
+			for _, item := range misses {
+				vector, ok := persisted[item.key]
+				if !ok {
+					remaining = append(remaining, item)
+					continue
+				}
+				c.store.put(item.key, vector, now.Add(c.options.ttl), c.options.maxEntries)
+				for _, resultIndex := range item.indices {
+					results[resultIndex] = cloneVector(vector)
+				}
+			}
+			misses = remaining
+		}
 	}
 	if len(misses) == 0 {
 		return results, nil
@@ -179,19 +239,43 @@ func (c *cachedEmbedder) batchEmbed(
 	}
 
 	expiresAt := c.now().Add(c.options.ttl)
+	persistentVectors := make(map[string][]float32, len(misses))
 	for missIndex, item := range misses {
 		vector := vectors[missIndex]
 		c.store.put(item.key, vector, expiresAt, c.options.maxEntries)
+		persistentVectors[item.key] = vector
 		for _, resultIndex := range item.indices {
 			results[resultIndex] = cloneVector(vector)
 		}
 	}
+	c.persist(ctx, persistentVectors, expiresAt)
 	return results, nil
 }
 
-func (c *cachedEmbedder) key(text string) string {
-	digest := sha256.Sum256([]byte(c.namespace + "\x00" + text))
+func (c *cachedEmbedder) key(ctx context.Context, text string) string {
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	digest := sha256.Sum256([]byte(strconv.FormatUint(tenantID, 10) + "\x00" + c.namespace + "\x00" + text))
 	return hex.EncodeToString(digest[:])
+}
+
+func (c *cachedEmbedder) persistentBackend(ctx context.Context) PersistentCache {
+	if tenantID, ok := types.TenantIDFromContext(ctx); !ok || tenantID == 0 {
+		return nil
+	}
+	return getPersistentCache()
+}
+
+func (c *cachedEmbedder) persist(
+	ctx context.Context, vectors map[string][]float32, expiresAt time.Time,
+) {
+	if len(vectors) == 0 {
+		return
+	}
+	if backend := c.persistentBackend(ctx); backend != nil {
+		// Persistence is best-effort: a cache database failure must never fail
+		// an embedding request that the provider already completed.
+		_ = backend.Put(context.WithoutCancel(ctx), c.inner.GetModelID(), vectors, expiresAt)
+	}
 }
 
 func (c *cachedEmbedder) GetModelName() string { return c.inner.GetModelName() }

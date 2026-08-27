@@ -67,25 +67,10 @@ func (o *observableChat) ChatStream(
 }
 
 func (o *observableChat) observe(ctx context.Context, usage types.TokenUsage, duration time.Duration, err error) {
-	observer, ok := types.LLMCallObserverFromContext(ctx)
-	requestScoped := ok
-	if !ok {
-		observer, ok = types.GlobalLLMCallObserver()
-		if !ok {
-			return
-		}
-	}
 	purpose, prefixFingerprint := types.LLMCallMetadataFromContext(ctx)
-	tenantID, tenantScoped := types.TenantIDFromContext(ctx)
-	// The global recorder must never create a synthetic tenant-0 bucket.
-	// Evaluation observers already own their tenant and remain compatible with
-	// legacy tests that do not attach tenant context.
-	if !requestScoped && !tenantScoped {
-		return
-	}
 	observation := types.LLMCallObservation{
-		TenantID: tenantID,
-		ModelID:  o.inner.GetModelID(), ModelName: o.inner.GetModelName(),
+		ModelType: types.ModelTypeKnowledgeQA,
+		ModelID:   o.inner.GetModelID(), ModelName: o.inner.GetModelName(),
 		Purpose: purpose, PromptPrefixFingerprint: prefixFingerprint,
 		Usage: usage, Pricing: o.pricing,
 		EstimatedCost: types.EstimateLLMCallCost(usage, o.pricing),
@@ -94,7 +79,7 @@ func (o *observableChat) observe(ctx context.Context, usage types.TokenUsage, du
 	if err != nil {
 		observation.Error = err.Error()
 	}
-	observer.ObserveLLMCall(observation)
+	types.DispatchLLMCallObservation(ctx, observation)
 }
 
 type modelStreamError struct {

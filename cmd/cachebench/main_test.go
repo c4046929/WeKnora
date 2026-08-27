@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,6 +30,20 @@ func TestCompareRuns(t *testing.T) {
 	require.InDelta(t, 0.8, report.Wiki.After.CacheHitRate, 0.0001)
 	require.InDelta(t, 0.8, report.Wiki.CacheHitRateDelta, 0.0001)
 	require.InDelta(t, 0.08, report.Wiki.After.CostByCurrency["USD"], 0.0001)
+}
+
+func TestReadRunDerivesEmbeddingProviderCallsFromEvaluationResult(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "evaluation.json")
+	data := []byte(`{"data":{"model_calls":[` +
+		`{"model_type":"Embedding","purpose":"embedding"},` +
+		`{"model_type":"KnowledgeQA","purpose":"wiki_page_modify"},` +
+		`{"model_type":"Embedding","purpose":"embedding"}` +
+		`]}}`)
+	require.NoError(t, os.WriteFile(path, data, 0o600))
+
+	run, err := readRun(path)
+	require.NoError(t, err)
+	require.Equal(t, 2, run.Embedding.ProviderCalls)
 }
 
 func TestSummarizeCallsUsesCallsFallback(t *testing.T) {

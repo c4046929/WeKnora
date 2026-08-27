@@ -7,7 +7,11 @@ on:
       - 'evaluation/**'
       - 'internal/application/service/evaluation*'
       - 'internal/application/service/metric/**'
+      - 'internal/application/service/chat_pipeline/**'
+      - 'internal/application/service/knowledgebase_search*.go'
       - 'internal/models/chat/**'
+      - 'internal/models/embedding/**'
+      - 'internal/models/rerank/**'
       - 'internal/types/evaluation.go'
       - 'internal/types/llm_observability.go'
       - '.github/workflows/evaluation-regression.yml'
@@ -27,8 +31,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Test evaluation metrics and gate
-        run: go test ./internal/application/service/metric ./cmd/evalgate ./cmd/cachebench
+      - name: Test evaluation metrics and executable retrieval gate
+        run: >-
+          go test ./internal/application/service/metric
+          ./internal/application/service/chat_pipeline
+          ./cmd/evalgate ./cmd/cachebench
       - name: Verify checked-in regression fixture
         run: >-
           go run ./cmd/evalgate
