@@ -56,3 +56,16 @@ The checked-in before/after files are deterministic examples for testing the
 calculation only; they are not claimed as measurements from a deployed model.
 Replace them with exports from two runs over the same documents, model, and
 chunking configuration for the submission report.
+
+## Real provider evidence
+
+`evidence/wiki-cache-bailian-2026-08-30.json` and its Markdown companion record
+a real Aliyun Bailian `qwen3.7-plus` Wiki run over the two checked-in synthetic
+Markdown inputs. The evidence contains no prompt, response, API key, or tenant
+identifier. The accompanying `.sql` file is read-only and reproduces the cache,
+cost, latency, and Wiki-page aggregates from the retained database rows.
+
+The report intentionally distinguishes positive and negative results: Wiki
+cache-read tokens and normalized input cost improved, while latency did not
+improve in that run. The deterministic fixture remains a calculator/CI example;
+it is not substituted for this real-provider evidence.
