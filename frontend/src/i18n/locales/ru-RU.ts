@@ -2088,6 +2088,42 @@ export default {
       rerank: 'ReRank',
       vllm: 'Зрение',
       asr: 'Речь'
+    },
+    usage: {
+      calls: 'Вызовы',
+      callsUnit: 'выз.',
+      tokens: 'Токены',
+      cache: 'Кэш',
+      cacheHitRate: 'Доля кэшированных токенов',
+      estimatedCost: 'Расчётная стоимость',
+      unpriced: 'Для этой модели не настроена цена токенов',
+      costUnknown: 'Стоимость не настроена',
+      range: 'Период использования',
+      range24h: 'Последние 24 часа',
+      range7d: 'Последние 7 дней',
+      range30d: 'Последние 30 дней',
+      rangeAll: 'За всё время',
+      details: 'Детализация по назначению',
+      hideDetails: 'Скрыть детализацию',
+      purposes: {
+        unspecified: 'Назначение не указано',
+        knowledge_qa: 'Ответы по базе знаний',
+        query_rewrite: 'Переформулировка запроса',
+        document_summary: 'Сводка документа',
+        document_auto_tag: 'Автоматические теги документа',
+        question_generation: 'Генерация вопросов',
+        data_analysis_plan: 'План анализа данных',
+        entity_extraction: 'Извлечение сущностей',
+        wiki_page_modify: 'Обновление страницы Wiki',
+        wiki_chunk_citation: 'Цитирование фрагмента Wiki',
+        wiki_candidate_slug: 'Адрес страницы Wiki',
+        wiki_summary: 'Сводка Wiki',
+        wiki_knowledge_extract: 'Извлечение знаний Wiki',
+        wiki_taxonomy_plan: 'Планирование структуры Wiki',
+        wiki_deduplication: 'Удаление дублей Wiki',
+        wiki_index_intro: 'Введение к индексу Wiki',
+        wiki_generation: 'Генерация содержимого Wiki'
+      }
     }
   },
   mcpSettings: {

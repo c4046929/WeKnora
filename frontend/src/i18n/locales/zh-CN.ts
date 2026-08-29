@@ -2090,6 +2090,42 @@ export default {
       rerank: 'ReRank',
       vllm: '视觉',
       asr: '语音'
+    },
+    usage: {
+      calls: '调用',
+      callsUnit: '次调用',
+      tokens: 'Token',
+      cache: '缓存',
+      cacheHitRate: '缓存 Token 命中率',
+      estimatedCost: '估算成本',
+      unpriced: '该模型尚未配置 Token 单价',
+      costUnknown: '成本未配置',
+      range: '用量区间',
+      range24h: '最近 24 小时',
+      range7d: '最近 7 天',
+      range30d: '最近 30 天',
+      rangeAll: '全部时间',
+      details: '用途明细',
+      hideDetails: '收起明细',
+      purposes: {
+        unspecified: '未标注用途',
+        knowledge_qa: '知识库问答',
+        query_rewrite: '查询改写',
+        document_summary: '文档摘要',
+        document_auto_tag: '文档自动标签',
+        question_generation: '问题生成',
+        data_analysis_plan: '数据分析规划',
+        entity_extraction: '实体提取',
+        wiki_page_modify: 'Wiki 页面更新',
+        wiki_chunk_citation: 'Wiki 分块引用',
+        wiki_candidate_slug: 'Wiki 页面地址生成',
+        wiki_summary: 'Wiki 摘要',
+        wiki_knowledge_extract: 'Wiki 知识提取',
+        wiki_taxonomy_plan: 'Wiki 分类规划',
+        wiki_deduplication: 'Wiki 去重',
+        wiki_index_intro: 'Wiki 索引介绍',
+        wiki_generation: 'Wiki 内容生成'
+      }
     }
   },
   mcpSettings: {

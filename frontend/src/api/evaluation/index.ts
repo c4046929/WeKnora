@@ -23,6 +23,13 @@ export interface EvaluationUsage {
 export interface EvaluationModelUsageStat {
   model_id: string
   model_name: string
+  model_type: string
+  usage: EvaluationUsage
+  purposes?: EvaluationPurposeUsageStat[]
+}
+
+export interface EvaluationPurposeUsageStat {
+  purpose: string
   usage: EvaluationUsage
 }
 

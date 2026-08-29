@@ -192,6 +192,18 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 	require.Equal(t, 2, stats[0].Usage.CallCount)
 	require.Equal(t, 150, stats[0].Usage.PromptTokens)
 	require.InDelta(t, 0.0012, stats[0].Usage.CostByCurrency["USD"], 0.0000001)
+	require.Len(t, stats[0].Purposes, 2)
+	purposes := map[string]types.EvaluationUsage{}
+	for _, purpose := range stats[0].Purposes {
+		purposes[purpose.Purpose] = purpose.Usage
+	}
+	require.Equal(t, 1, purposes["query_rewrite"].CallCount)
+	require.Equal(t, 120, purposes["query_rewrite"].TotalTokens)
+	require.InDelta(t, 0.4, purposes["query_rewrite"].CacheHitRate, 0.0001)
+	require.InDelta(t, 0.0012, purposes["query_rewrite"].CostByCurrency["USD"], 0.0000001)
+	require.Equal(t, 1, purposes["knowledge_qa"].CallCount)
+	require.Equal(t, 1, purposes["knowledge_qa"].FailedCalls)
+	require.Empty(t, purposes["knowledge_qa"].CostByCurrency)
 
 	require.NoError(t, storage.db.Model(&evaluationModelCallRecord{}).
 		Where("purpose = ?", "query_rewrite").
@@ -203,6 +215,9 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 	require.Equal(t, 1, windowStats[0].Usage.CallCount)
 	require.Equal(t, 50, windowStats[0].Usage.PromptTokens)
 	require.Empty(t, windowStats[0].Usage.CostByCurrency)
+	require.Len(t, windowStats[0].Purposes, 1)
+	require.Equal(t, "knowledge_qa", windowStats[0].Purposes[0].Purpose)
+	require.Equal(t, 50, windowStats[0].Purposes[0].Usage.PromptTokens)
 }
 
 func TestEvaluationStorageProtectsFingerprintAndDropsProviderError(t *testing.T) {

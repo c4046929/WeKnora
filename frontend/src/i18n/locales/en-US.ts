@@ -4574,6 +4574,42 @@ export default {
       vllm: 'Vision',
       asr: 'Speech'
     },
+    usage: {
+      calls: 'Calls',
+      callsUnit: 'calls',
+      tokens: 'Tokens',
+      cache: 'Cache',
+      cacheHitRate: 'Cached-token hit rate',
+      estimatedCost: 'Estimated cost',
+      unpriced: 'Token pricing is not configured for this model',
+      costUnknown: 'Cost unavailable',
+      range: 'Usage period',
+      range24h: 'Last 24 hours',
+      range7d: 'Last 7 days',
+      range30d: 'Last 30 days',
+      rangeAll: 'All time',
+      details: 'Purpose details',
+      hideDetails: 'Hide details',
+      purposes: {
+        unspecified: 'Unspecified purpose',
+        knowledge_qa: 'Knowledge-base Q&A',
+        query_rewrite: 'Query rewrite',
+        document_summary: 'Document summary',
+        document_auto_tag: 'Automatic document tagging',
+        question_generation: 'Question generation',
+        data_analysis_plan: 'Data-analysis planning',
+        entity_extraction: 'Entity extraction',
+        wiki_page_modify: 'Wiki page update',
+        wiki_chunk_citation: 'Wiki chunk citation',
+        wiki_candidate_slug: 'Wiki page slug',
+        wiki_summary: 'Wiki summary',
+        wiki_knowledge_extract: 'Wiki knowledge extraction',
+        wiki_taxonomy_plan: 'Wiki taxonomy planning',
+        wiki_deduplication: 'Wiki deduplication',
+        wiki_index_intro: 'Wiki index introduction',
+        wiki_generation: 'Wiki content generation'
+      }
+    },
     actions: {
       addModel: 'Add Model',
       debugModel: 'Model Test'

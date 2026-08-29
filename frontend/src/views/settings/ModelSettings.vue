@@ -139,6 +139,38 @@
                 :title="usageLabels.unpriced">
                 {{ usageLabels.costUnknown }}
               </span>
+              <button
+                v-if="modelPurposes(model).length"
+                type="button"
+                class="model-card__usage-toggle"
+                :aria-expanded="isUsageExpanded(model)"
+                @click.stop="toggleUsageDetails(model)"
+              >
+                {{ isUsageExpanded(model) ? usageLabels.hideDetails : usageLabels.details }}
+                <t-icon :name="isUsageExpanded(model) ? 'chevron-up' : 'chevron-down'" size="12px" />
+              </button>
+            </div>
+            <div v-if="isUsageExpanded(model)" class="model-card__purpose-list" @click.stop>
+              <div v-for="purpose in modelPurposes(model)" :key="purpose.purpose || '_unspecified'"
+                class="model-card__purpose-row">
+                <div class="model-card__purpose-heading">
+                  <span>{{ purposeLabel(purpose.purpose) }}</span>
+                  <span>{{ formatInteger(purpose.usage.call_count) }} {{ usageLabels.callsUnit }}</span>
+                </div>
+                <div class="model-card__purpose-bar" aria-hidden="true">
+                  <span :style="{ width: purposeBarWidth(model, purpose.usage.call_count) }" />
+                </div>
+                <div class="model-card__purpose-metrics">
+                  <span>{{ usageLabels.tokens }} {{ formatCompact(purpose.usage.total_tokens) }}</span>
+                  <span v-if="purpose.usage.cache_reported_calls > 0">
+                    {{ usageLabels.cache }} {{ formatPercent(purpose.usage.cache_hit_rate) }}
+                  </span>
+                  <span v-if="purpose.usage.priced_calls > 0">
+                    {{ formatCosts(purpose.usage.cost_by_currency) }}
+                  </span>
+                  <span v-else-if="purpose.usage.unpriced_calls > 0">{{ usageLabels.costUnknown }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -173,7 +205,7 @@ import { useI18n } from 'vue-i18n'
 import ModelEditorDialog from '@/components/ModelEditorDialog.vue'
 import ModelDebugDrawer from '@/components/ModelDebugDrawer.vue'
 import { listModels, createModel, updateModel as updateModelAPI, deleteModel as deleteModelAPI, type ModelConfig } from '@/api/model'
-import { getEvaluationModelUsage, type EvaluationUsage } from '@/api/evaluation'
+import { getEvaluationModelUsage, type EvaluationModelUsageStat, type EvaluationUsage } from '@/api/evaluation'
 import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 
@@ -204,40 +236,30 @@ watch(
 // 模型列表数据
 const allModels = ref<ModelConfig[]>([])
 const modelUsageByID = ref<Record<string, EvaluationUsage>>({})
+const modelUsageStatsByID = ref<Record<string, EvaluationModelUsageStat>>({})
+const expandedUsageModels = ref<Record<string, boolean>>({})
 const usageRange = ref<'24h' | '7d' | '30d' | 'all'>('30d')
 
-const usageLabels = computed(() => {
-  const lang = String(locale.value).toLowerCase()
-  if (lang.startsWith('zh')) return {
-    calls: '调用', tokens: 'Token', cache: '缓存', cacheHitRate: '缓存命中率',
-    estimatedCost: '估算成本', unpriced: '该模型尚未配置 Token 单价', costUnknown: '成本未配置', range: '用量区间',
-  }
-  if (lang.startsWith('ko')) return {
-    calls: '호출', tokens: 'Token', cache: '캐시', cacheHitRate: '캐시 적중률',
-    estimatedCost: '평가 예상 비용', unpriced: 'Token 가격이 설정되지 않음', costUnknown: '비용 미설정', range: '사용 기간',
-  }
-  if (lang.startsWith('ru')) return {
-    calls: 'Вызовы', tokens: 'Token', cache: 'Кэш', cacheHitRate: 'Доля попаданий в кэш',
-    estimatedCost: 'Расчётная стоимость оценки', unpriced: 'Цена токенов не настроена', costUnknown: 'Нет цены', range: 'Период',
-  }
-  return {
-    calls: 'Calls', tokens: 'Tokens', cache: 'Cache', cacheHitRate: 'Cache hit rate',
-    estimatedCost: 'Estimated cost', unpriced: 'Token pricing is not configured', costUnknown: 'Cost unavailable', range: 'Usage period',
-  }
-})
+const usageLabels = computed(() => ({
+  calls: t('modelSettings.usage.calls'),
+  callsUnit: t('modelSettings.usage.callsUnit'),
+  tokens: t('modelSettings.usage.tokens'),
+  cache: t('modelSettings.usage.cache'),
+  cacheHitRate: t('modelSettings.usage.cacheHitRate'),
+  estimatedCost: t('modelSettings.usage.estimatedCost'),
+  unpriced: t('modelSettings.usage.unpriced'),
+  costUnknown: t('modelSettings.usage.costUnknown'),
+  range: t('modelSettings.usage.range'),
+  details: t('modelSettings.usage.details'),
+  hideDetails: t('modelSettings.usage.hideDetails'),
+}))
 
-const usageRangeOptions = computed(() => {
-  const lang = String(locale.value).toLowerCase()
-  const labels = lang.startsWith('zh')
-    ? ['最近 24 小时', '最近 7 天', '最近 30 天', '全部时间']
-    : ['Last 24 hours', 'Last 7 days', 'Last 30 days', 'All time']
-  return [
-    { label: labels[0], value: '24h' },
-    { label: labels[1], value: '7d' },
-    { label: labels[2], value: '30d' },
-    { label: labels[3], value: 'all' },
-  ]
-})
+const usageRangeOptions = computed(() => [
+  { label: t('modelSettings.usage.range24h'), value: '24h' },
+  { label: t('modelSettings.usage.range7d'), value: '7d' },
+  { label: t('modelSettings.usage.range30d'), value: '30d' },
+  { label: t('modelSettings.usage.rangeAll'), value: 'all' },
+])
 
 const selectedUsageRange = () => {
   if (usageRange.value === 'all') return {}
@@ -248,6 +270,23 @@ const selectedUsageRange = () => {
 }
 
 const modelUsage = (model: any) => modelUsageByID.value[model.id]
+const modelPurposes = (model: any) => modelUsageStatsByID.value[model.id]?.purposes || []
+const isUsageExpanded = (model: any) => Boolean(expandedUsageModels.value[model.id])
+const toggleUsageDetails = (model: any) => {
+  expandedUsageModels.value = {
+    ...expandedUsageModels.value,
+    [model.id]: !expandedUsageModels.value[model.id],
+  }
+}
+const purposeLabel = (purpose: string) => {
+  if (!purpose) return t('modelSettings.usage.purposes.unspecified')
+  const key = `modelSettings.usage.purposes.${purpose}`
+  return te(key) ? t(key) : purpose.replaceAll('_', ' ')
+}
+const purposeBarWidth = (model: any, callCount: number) => {
+  const maxCalls = Math.max(...modelPurposes(model).map(item => item.usage.call_count), 1)
+  return `${Math.max((callCount / maxCalls) * 100, 3)}%`
+}
 const formatInteger = (value: number) => new Intl.NumberFormat(locale.value).format(value || 0)
 const formatCompact = (value: number) => new Intl.NumberFormat(locale.value, {
   notation: 'compact', maximumFractionDigits: 1,
@@ -414,6 +453,7 @@ const loadModels = async () => {
     ])
     allModels.value = models
     modelUsageByID.value = Object.fromEntries(usageStats.map(stat => [stat.model_id, stat.usage]))
+    modelUsageStatsByID.value = Object.fromEntries(usageStats.map(stat => [stat.model_id, stat]))
   } catch (error: any) {
     console.error('加载模型列表失败:', error)
     MessagePlugin.error(error.message)
@@ -1092,6 +1132,96 @@ onMounted(() => {
 
   &--muted {
     color: var(--td-text-color-placeholder);
+  }
+}
+
+.model-card__usage-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 20px;
+  padding: 1px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--td-brand-color);
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--td-brand-color);
+    outline-offset: 1px;
+    border-radius: 4px;
+  }
+}
+
+.model-card__purpose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--td-bg-color-secondarycontainer) 72%, transparent);
+}
+
+.model-card__purpose-row {
+  min-width: 0;
+}
+
+.model-card__purpose-heading,
+.model-card__purpose-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.model-card__purpose-heading {
+  color: var(--td-text-color-primary);
+  font-size: 11px;
+  font-weight: 500;
+
+  span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span:last-child {
+    flex-shrink: 0;
+    color: var(--td-text-color-secondary);
+    font-weight: 400;
+  }
+}
+
+.model-card__purpose-bar {
+  height: 4px;
+  margin: 4px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--td-bg-color-component);
+
+  span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--td-brand-color);
+  }
+}
+
+.model-card__purpose-metrics {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  color: var(--td-text-color-secondary);
+  font-size: 10px;
+
+  span + span::before {
+    margin-right: 8px;
+    color: var(--td-text-color-placeholder);
+    content: '·';
   }
 }
 

@@ -119,10 +119,18 @@ type EvaluationUsage struct {
 // ModelUsageStat aggregates persisted evaluation, chat, Wiki, and background
 // traffic for one model in a tenant. It contains no prompt or response bodies.
 type ModelUsageStat struct {
-	ModelID   string          `json:"model_id"`
-	ModelName string          `json:"model_name"`
-	ModelType ModelType       `json:"model_type"`
-	Usage     EvaluationUsage `json:"usage"`
+	ModelID   string                  `json:"model_id"`
+	ModelName string                  `json:"model_name"`
+	ModelType ModelType               `json:"model_type"`
+	Usage     EvaluationUsage         `json:"usage"`
+	Purposes  []ModelPurposeUsageStat `json:"purposes,omitempty"`
+}
+
+// ModelPurposeUsageStat breaks a model's aggregate down by a secret-free call
+// purpose such as knowledge_qa or wiki_page_modify.
+type ModelPurposeUsageStat struct {
+	Purpose string          `json:"purpose"`
+	Usage   EvaluationUsage `json:"usage"`
 }
 
 // EvaluationModelCall describes one model call without storing prompt content.

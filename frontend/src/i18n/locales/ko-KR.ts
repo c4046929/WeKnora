@@ -2088,6 +2088,42 @@ export default {
       rerank: 'ReRank',
       vllm: '비전',
       asr: '음성'
+    },
+    usage: {
+      calls: '호출',
+      callsUnit: '회 호출',
+      tokens: '토큰',
+      cache: '캐시',
+      cacheHitRate: '캐시 토큰 적중률',
+      estimatedCost: '예상 비용',
+      unpriced: '이 모델의 토큰 가격이 설정되지 않았습니다',
+      costUnknown: '비용 미설정',
+      range: '사용 기간',
+      range24h: '최근 24시간',
+      range7d: '최근 7일',
+      range30d: '최근 30일',
+      rangeAll: '전체 기간',
+      details: '용도 세부 정보',
+      hideDetails: '세부 정보 접기',
+      purposes: {
+        unspecified: '지정되지 않은 용도',
+        knowledge_qa: '지식 베이스 질의응답',
+        query_rewrite: '쿼리 재작성',
+        document_summary: '문서 요약',
+        document_auto_tag: '문서 자동 태그',
+        question_generation: '질문 생성',
+        data_analysis_plan: '데이터 분석 계획',
+        entity_extraction: '엔터티 추출',
+        wiki_page_modify: 'Wiki 페이지 업데이트',
+        wiki_chunk_citation: 'Wiki 청크 인용',
+        wiki_candidate_slug: 'Wiki 페이지 주소 생성',
+        wiki_summary: 'Wiki 요약',
+        wiki_knowledge_extract: 'Wiki 지식 추출',
+        wiki_taxonomy_plan: 'Wiki 분류 계획',
+        wiki_deduplication: 'Wiki 중복 제거',
+        wiki_index_intro: 'Wiki 색인 소개',
+        wiki_generation: 'Wiki 콘텐츠 생성'
+      }
     }
   },
   mcpSettings: {
