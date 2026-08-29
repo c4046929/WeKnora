@@ -5,9 +5,11 @@ on:
     paths:
       - 'cmd/evalgate/**'
       - 'cmd/cachebench/**'
+      - 'cmd/retrievalgate/**'
       - 'evaluation/**'
       - 'frontend/src/api/evaluation/**'
       - 'frontend/src/views/settings/ModelSettings.vue'
+      - 'frontend/src/i18n/locales/**'
       - 'frontend/package.json'
       - 'frontend/package-lock.json'
       - 'internal/config/config.go'
@@ -29,11 +31,15 @@ on:
       - 'migrations/sqlite/000016_global_model_call_observability*'
       - 'migrations/sqlite/000018_model_call_types*'
       - 'migrations/sqlite/000019_embedding_cache_entries*'
+      - 'migrations/sqlite/000020_evaluation_usage_snapshot*'
+      - 'migrations/sqlite/000021_embedding_cache_usage*'
       - 'migrations/versioned/000088_evaluation_model_calls*'
       - 'migrations/versioned/000089_evaluation_model_call_cost*'
       - 'migrations/versioned/000090_global_model_call_observability*'
       - 'migrations/versioned/000092_model_call_types*'
       - 'migrations/versioned/000093_embedding_cache_entries*'
+      - 'migrations/versioned/000094_evaluation_usage_snapshot*'
+      - 'migrations/versioned/000095_embedding_cache_usage*'
       - '.env.example'
       - 'Makefile'
       - '.github/workflows/evaluation-regression.yml'
@@ -61,11 +67,13 @@ jobs:
           ./internal/config
           ./internal/models/chat
           ./internal/models/embedding
-          ./cmd/evalgate ./cmd/cachebench
-      - name: Verify checked-in regression fixture
+          ./cmd/retrievalgate ./cmd/evalgate ./cmd/cachebench
+      - name: Generate and gate production-pipeline result
+        run: go run ./cmd/retrievalgate -out evaluation-pipeline-result.json
+      - name: Verify generated production-pipeline result
         run: >-
           go run ./cmd/evalgate
-          -result evaluation/fixtures/regression_result.json
+          -result evaluation-pipeline-result.json
           -baseline evaluation/baseline.json
           -report evaluation-report.json
       - name: Prove a recall regression is rejected and identified
@@ -94,6 +102,13 @@ jobs:
           name: evaluation-degradation-proof
           path: evaluation-degraded-report.json
           if-no-files-found: warn
+      - name: Upload production-pipeline result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-production-pipeline-result
+          path: evaluation-pipeline-result.json
+          if-no-files-found: error
       - name: Verify cache comparison example
         run: >-
           go run ./cmd/cachebench
@@ -122,4 +137,4 @@ jobs:
         run: npm ci
       - name: Type-check model usage page and API integration
         working-directory: frontend
-        run: npm run type-check
+        run: npm run build-with-types

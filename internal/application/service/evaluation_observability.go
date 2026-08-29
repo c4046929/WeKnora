@@ -44,6 +44,21 @@ func (evaluationModelCallRecord) TableName() string {
 	return "evaluation_model_calls"
 }
 
+type embeddingCacheUsageRecord struct {
+	ID                  string `gorm:"primaryKey;size:36"`
+	TenantID            uint64 `gorm:"not null;index"`
+	ModelID             string `gorm:"size:255;not null"`
+	ModelName           string `gorm:"size:255;not null"`
+	LookupCount         int
+	HitCount            int
+	MissCount           int
+	DeduplicatedCount   int
+	AvoidedComputations int
+	CreatedAt           time.Time
+}
+
+func (embeddingCacheUsageRecord) TableName() string { return "embedding_cache_usage_events" }
+
 type evaluationCallObserver struct {
 	ctx      context.Context
 	storage  *evaluationStorage
@@ -177,6 +192,7 @@ func accumulateEvaluationUsage(usage *types.EvaluationUsage, call evaluationMode
 func finalizeEvaluationUsage(usage *types.EvaluationUsage) {
 	if usage.CallCount > 0 {
 		usage.AverageModelLatencyMS = float64(usage.ModelDurationMS) / float64(usage.CallCount)
+		usage.CacheCoverageRate = float64(usage.CacheReportedCalls) / float64(usage.CallCount)
 	}
 	reportedPromptTokens := usage.CacheReadTokens + usage.CacheMissTokens
 	if reportedPromptTokens > 0 {
@@ -210,6 +226,16 @@ type modelCostAggregateRow struct {
 	Purpose  string
 	Currency string
 	Cost     float64
+}
+
+type embeddingCacheAggregateRow struct {
+	ModelID             string
+	ModelName           string
+	LookupCount         int
+	HitCount            int
+	MissCount           int
+	DeduplicatedCount   int
+	AvoidedComputations int
 }
 
 func usageFromAggregateRow(row modelUsageAggregateRow) types.EvaluationUsage {
@@ -358,6 +384,47 @@ func (e *evaluationStorage) modelUsage(
 		if indexes, ok := purposeIndex[cost.ModelID+"\x00"+cost.Purpose]; ok {
 			stats[indexes[0]].Purposes[indexes[1]].Usage.CostByCurrency[cost.Currency] = cost.Cost
 		}
+	}
+
+	var cacheRows []embeddingCacheAggregateRow
+	cacheQuery := e.db.WithContext(ctx).Model(&embeddingCacheUsageRecord{}).
+		Where("tenant_id = ?", tenantID)
+	if startTime != nil {
+		cacheQuery = cacheQuery.Where("created_at >= ?", *startTime)
+	}
+	if endTime != nil {
+		cacheQuery = cacheQuery.Where("created_at <= ?", *endTime)
+	}
+	if err := cacheQuery.
+		Select(`model_id, MAX(model_name) AS model_name,
+			COALESCE(SUM(lookup_count), 0) AS lookup_count,
+			COALESCE(SUM(hit_count), 0) AS hit_count,
+			COALESCE(SUM(miss_count), 0) AS miss_count,
+			COALESCE(SUM(deduplicated_count), 0) AS deduplicated_count,
+			COALESCE(SUM(avoided_computations), 0) AS avoided_computations`).
+		Group("model_id").
+		Scan(&cacheRows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range cacheRows {
+		modelIndex, ok := indexByModelID[row.ModelID]
+		if !ok {
+			stats = append(stats, types.ModelUsageStat{
+				ModelID: row.ModelID, ModelName: row.ModelName, ModelType: types.ModelTypeEmbedding,
+				Usage: types.EvaluationUsage{CostByCurrency: make(map[string]float64)},
+			})
+			modelIndex = len(stats) - 1
+			indexByModelID[row.ModelID] = modelIndex
+		}
+		cacheUsage := &types.EmbeddingCacheUsageStat{
+			LookupCount: row.LookupCount, HitCount: row.HitCount, MissCount: row.MissCount,
+			DeduplicatedCount: row.DeduplicatedCount, AvoidedComputations: row.AvoidedComputations,
+		}
+		if row.LookupCount > 0 {
+			cacheUsage.HitRate = float64(row.HitCount) / float64(row.LookupCount)
+			cacheUsage.AvoidedRate = float64(row.AvoidedComputations) / float64(row.LookupCount)
+		}
+		stats[modelIndex].EmbeddingCache = cacheUsage
 	}
 	return stats, nil
 }

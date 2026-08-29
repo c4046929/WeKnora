@@ -13,6 +13,7 @@ export interface EvaluationUsage {
   cache_reported_calls: number
   cache_hit_calls: number
   cache_hit_rate: number
+  cache_coverage_rate: number
   model_duration_ms: number
   average_model_latency_ms: number
   priced_calls: number
@@ -26,6 +27,17 @@ export interface EvaluationModelUsageStat {
   model_type: string
   usage: EvaluationUsage
   purposes?: EvaluationPurposeUsageStat[]
+  embedding_cache?: EmbeddingCacheUsageStat
+}
+
+export interface EmbeddingCacheUsageStat {
+  lookup_count: number
+  hit_count: number
+  miss_count: number
+  deduplicated_count: number
+  avoided_computations: number
+  hit_rate: number
+  avoided_rate: number
 }
 
 export interface EvaluationPurposeUsageStat {
