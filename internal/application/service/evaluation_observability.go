@@ -64,6 +64,14 @@ func (e *evaluationStorage) recordModelCall(
 	observation types.LLMCallObservation,
 ) error {
 	taskIDCopy := taskID
+	// Evaluation calls use a request-scoped observer, so they do not pass
+	// through ModelCallRecorder. Apply the same privacy policy here: never store
+	// provider errors (which may contain request excerpts), and HMAC-protect the
+	// stable prefix fingerprint with the deployment secret.
+	observation.Error = ""
+	observation.PromptPrefixFingerprint = protectModelCallFingerprint(
+		observation.PromptPrefixFingerprint, e.fingerprintKey,
+	)
 	record := newModelCallRecord(&taskIDCopy, tenantID, observation, time.Now().UTC())
 	return e.db.WithContext(ctx).Create(record).Error
 }

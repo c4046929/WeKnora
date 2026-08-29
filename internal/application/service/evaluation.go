@@ -87,12 +87,16 @@ func (evaluationRecord) TableName() string {
 // evaluationStorage serializes updates made by the parallel evaluation workers
 // and persists every state transition to the database.
 type evaluationStorage struct {
-	db *gorm.DB
-	mu sync.Mutex
+	db             *gorm.DB
+	fingerprintKey []byte
+	mu             sync.Mutex
 }
 
 func newEvaluationStorage(db *gorm.DB) *evaluationStorage {
-	return &evaluationStorage{db: db}
+	return &evaluationStorage{
+		db:             db,
+		fingerprintKey: []byte(os.Getenv("WEKNORA_MODEL_CALL_FINGERPRINT_KEY")),
+	}
 }
 
 func (e *evaluationStorage) register(ctx context.Context, detail *types.EvaluationDetail) error {

@@ -6,12 +6,13 @@ by pull requests and the scheduled CI job.
 ## Run locally
 
 ```bash
-go test ./internal/application/service/metric ./cmd/evalgate
-go run ./cmd/evalgate \
-  -result evaluation/fixtures/regression_result.json \
-  -baseline evaluation/baseline.json \
-  -report evaluation-report.json
+make evaluation-gate
 ```
+
+This single command runs the executable production-pipeline retrieval gate and
+the report calculators, then writes `evaluation-report.json` and
+`cache-comparison.json`. The JSON printed to the terminal and the checked report
+are generated from the same inputs, so reviewers can compare them directly.
 
 The result can be either the evaluation API response envelope or its `data`
 object. Dot-separated paths in `baseline.json` address numeric result fields.
@@ -29,6 +30,12 @@ The checked-in fixture makes the CI gate deterministic. Running evaluations
 against a deployed WeKnora instance is intentionally not configured here: the
 deployment URL, API token, dataset, and result-retention policy must be approved
 before CI is allowed to send credentials or evaluation data to another system.
+
+CI also runs `fixtures/regression_degraded.json`, requires it to exit with
+status 1, and verifies that the report names
+`metric.retrieval_metrics.recall` as the failed metric. This is an executable
+proof that a recall regression blocks the job rather than a screenshot-only
+claim.
 
 ## Compare cache optimization runs
 

@@ -116,7 +116,8 @@ type EvaluationUsage struct {
 	CostByCurrency        map[string]float64 `json:"cost_by_currency"`
 }
 
-// ModelUsageStat aggregates evaluation traffic for one model in a tenant.
+// ModelUsageStat aggregates persisted evaluation, chat, Wiki, and background
+// traffic for one model in a tenant. It contains no prompt or response bodies.
 type ModelUsageStat struct {
 	ModelID   string          `json:"model_id"`
 	ModelName string          `json:"model_name"`

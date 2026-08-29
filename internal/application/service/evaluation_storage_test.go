@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"testing"
 	"time"
@@ -107,6 +110,7 @@ func TestEvaluationStorageReturnsTaskNotFound(t *testing.T) {
 }
 
 func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
+	t.Setenv("WEKNORA_MODEL_CALL_FINGERPRINT_KEY", "evaluation-test-secret")
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evaluation.db")), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&evaluationRecord{}, &evaluationModelCallRecord{}))
@@ -154,7 +158,7 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 	require.Equal(t, "query_rewrite", loaded.ModelCalls[0].Purpose)
 	require.Equal(t, types.ModelTypeKnowledgeQA, loaded.ModelCalls[0].ModelType)
 	require.Equal(t, types.ModelTypeEmbedding, loaded.ModelCalls[1].ModelType)
-	require.Equal(t, "provider timeout", loaded.ModelCalls[1].Error)
+	require.Empty(t, loaded.ModelCalls[1].Error)
 	require.Equal(t, 2, loaded.Usage.CallCount)
 	require.Equal(t, 1, loaded.Usage.SuccessfulCalls)
 	require.Equal(t, 1, loaded.Usage.FailedCalls)
@@ -199,4 +203,36 @@ func TestEvaluationStorageAggregatesModelCalls(t *testing.T) {
 	require.Equal(t, 1, windowStats[0].Usage.CallCount)
 	require.Equal(t, 50, windowStats[0].Usage.PromptTokens)
 	require.Empty(t, windowStats[0].Usage.CostByCurrency)
+}
+
+func TestEvaluationStorageProtectsFingerprintAndDropsProviderError(t *testing.T) {
+	t.Setenv("WEKNORA_MODEL_CALL_FINGERPRINT_KEY", "evaluation-secret")
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "evaluation-privacy.db")), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&evaluationModelCallRecord{}))
+	storage := newEvaluationStorage(db)
+
+	require.NoError(t, storage.recordModelCall(t.Context(), "task-privacy", 17, types.LLMCallObservation{
+		ModelName: "privacy-model", PromptPrefixFingerprint: "raw-stable-prefix",
+		Error: "provider error containing a request excerpt", Success: false,
+	}))
+
+	var record evaluationModelCallRecord
+	require.NoError(t, db.First(&record).Error)
+	mac := hmac.New(sha256.New, []byte("evaluation-secret"))
+	_, _ = mac.Write([]byte("raw-stable-prefix"))
+	require.Equal(t, hex.EncodeToString(mac.Sum(nil)), record.PromptPrefixFingerprint)
+	require.NotEqual(t, "raw-stable-prefix", record.PromptPrefixFingerprint)
+	require.Empty(t, record.ErrMsg)
+
+	// A missing key must fail closed: omit the fingerprint instead of storing a
+	// weak, guessable hash.
+	t.Setenv("WEKNORA_MODEL_CALL_FINGERPRINT_KEY", "")
+	unkeyedStorage := newEvaluationStorage(db)
+	require.NoError(t, unkeyedStorage.recordModelCall(t.Context(), "task-no-key", 17, types.LLMCallObservation{
+		ModelName: "no-key-model", PromptPrefixFingerprint: "must-not-be-stored", Success: true,
+	}))
+	var unkeyedRecord evaluationModelCallRecord
+	require.NoError(t, db.Where("model_name = ?", "no-key-model").First(&unkeyedRecord).Error)
+	require.Empty(t, unkeyedRecord.PromptPrefixFingerprint)
 }

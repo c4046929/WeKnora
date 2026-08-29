@@ -117,10 +117,14 @@ func (r *ModelCallRecorder) ObserveLLMCall(observation types.LLMCallObservation)
 }
 
 func (r *ModelCallRecorder) protectFingerprint(fingerprint string) string {
-	if fingerprint == "" || len(r.fingerprintKey) == 0 {
+	return protectModelCallFingerprint(fingerprint, r.fingerprintKey)
+}
+
+func protectModelCallFingerprint(fingerprint string, key []byte) string {
+	if fingerprint == "" || len(key) == 0 {
 		return ""
 	}
-	mac := hmac.New(sha256.New, r.fingerprintKey)
+	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(fingerprint))
 	return hex.EncodeToString(mac.Sum(nil))
 }

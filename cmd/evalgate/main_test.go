@@ -79,6 +79,29 @@ func TestEvaluateReportsMissingAndRegression(t *testing.T) {
 	require.NotEmpty(t, report.Checks[len(report.Checks)-1].Error)
 }
 
+func TestEvaluateIdentifiesRecallRegression(t *testing.T) {
+	result := decodeResult(t, `{
+		"task":{"status":2,"total":10,"finished":10},
+		"metric":{"retrieval_metrics":{"recall":0.4}}
+	}`)
+	report := evaluate(result, baseline{
+		RequireSuccess:  true,
+		RequireComplete: true,
+		Minimum: map[string]float64{
+			"metric.retrieval_metrics.recall": 0.5,
+		},
+	})
+
+	require.False(t, report.Passed)
+	require.Len(t, report.Checks, 3)
+	recallCheck := report.Checks[2]
+	require.Equal(t, "metric.retrieval_metrics.recall", recallCheck.Path)
+	require.Equal(t, "minimum", recallCheck.Rule)
+	require.Equal(t, 0.5, recallCheck.Expected)
+	require.Equal(t, 0.4, recallCheck.Actual)
+	require.False(t, recallCheck.Passed)
+}
+
 func TestUnwrapAPIData(t *testing.T) {
 	result := decodeResult(t, `{"success":true,"data":{"task":{"status":"success"}}}`)
 	unwrapped := unwrapAPIData(result)
