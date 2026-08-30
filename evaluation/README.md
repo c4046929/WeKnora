@@ -71,3 +71,11 @@ The report intentionally distinguishes positive and negative results: Wiki
 cache-read tokens and normalized input cost improved, while latency did not
 improve in that run. The deterministic fixture remains a calculator/CI example;
 it is not substituted for this real-provider evidence.
+
+`evidence/embedding-cache-ollama-2026-08-30.json` and its Markdown/SQL
+companions record a real local Ollama index-rebuild comparison. After a backend
+restart, four deterministic document-chunk inputs were served by the durable
+tenant-scoped cache, reducing total provider computations from 17 to 13
+(23.53%) and the fixed document-chunk stage from 4 to 0 (100%). The report also
+retains an excluded control run where a different filename changed the indexed
+document title and therefore the cache key.
