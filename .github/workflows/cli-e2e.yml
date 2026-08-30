@@ -64,3 +64,83 @@ jobs:
           WEKNORA_E2E_HOST: ${{ secrets.WEKNORA_E2E_HOST }}
           WEKNORA_E2E_TOKEN: ${{ secrets.WEKNORA_E2E_TOKEN }}
         run: go test -tags=acceptance_e2e -v -timeout=8m ./acceptance/e2e/...
+
+  topic3-deterministic-gate:
+    name: topic 3 deterministic gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Test metrics, observability, cache, and executable gates
+        working-directory: .
+        run: >-
+          go test ./internal/application/service/metric
+          ./internal/application/service/chat_pipeline
+          ./internal/application/service
+          ./internal/config
+          ./internal/models/chat
+          ./internal/models/embedding
+          ./cmd/retrievalgate ./cmd/evalgate ./cmd/cachebench
+      - name: Generate production-pipeline evaluation result
+        working-directory: .
+        run: go run ./cmd/retrievalgate -out evaluation-pipeline-result.json
+      - name: Gate production-pipeline result against baseline
+        working-directory: .
+        run: >-
+          go run ./cmd/evalgate
+          -result evaluation-pipeline-result.json
+          -baseline evaluation/baseline.json
+          -report evaluation-report.json
+      - name: Prove a recall regression is rejected and identified
+        working-directory: .
+        run: |
+          if go run ./cmd/evalgate \
+            -result evaluation/fixtures/regression_degraded.json \
+            -baseline evaluation/baseline.json \
+            -report evaluation-degraded-report.json; then
+            echo "expected the degraded evaluation to fail" >&2
+            exit 1
+          fi
+          grep -q '"path": "metric.retrieval_metrics.recall"' evaluation-degraded-report.json
+          grep -A5 '"path": "metric.retrieval_metrics.recall"' evaluation-degraded-report.json | grep -q '"passed": false'
+      - name: Verify cache comparison example
+        working-directory: .
+        run: >-
+          go run ./cmd/cachebench
+          -before evaluation/fixtures/cache_before.json
+          -after evaluation/fixtures/cache_after.json
+          -report cache-comparison.json
+      - name: Upload topic 3 validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: topic-3-validation-reports
+          path: |
+            evaluation-pipeline-result.json
+            evaluation-report.json
+            evaluation-degraded-report.json
+            cache-comparison.json
+          if-no-files-found: warn
+
+  topic3-frontend:
+    name: topic 3 frontend production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Type-check and build model usage UI
+        working-directory: frontend
+        run: npm run build-with-types
