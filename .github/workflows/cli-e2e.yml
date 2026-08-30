@@ -32,10 +32,11 @@ jobs:
   e2e:
     name: rag full loop
     # Skip auto-trigger on label-add unless the label is exactly "acceptance-e2e".
-    # Manual workflow_dispatch always runs.
+    # The isolated topic 3 validation branch never receives E2E secrets.
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'acceptance-e2e'))
+      github.ref != 'refs/heads/ci/rhino-topic-3-validation' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'acceptance-e2e')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
