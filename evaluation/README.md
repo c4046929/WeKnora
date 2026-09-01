@@ -1,5 +1,7 @@
 # Evaluation regression gate
 
+English | [简体中文](./README_CN.md)
+
 This directory contains the deterministic quality, latency, and cost gate used
 by pull requests and the scheduled CI job.
 
